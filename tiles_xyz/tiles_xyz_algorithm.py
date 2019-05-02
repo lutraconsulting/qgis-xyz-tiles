@@ -34,8 +34,8 @@ import os
 import math
 from uuid import uuid4
 
-import ogr
 import gdal
+import sqlite3
 from qgis.PyQt.QtCore import QSize, Qt, QByteArray, QBuffer
 from qgis.PyQt.QtGui import QColor, QImage, QPainter
 from qgis.core import (QgsProcessingException,
@@ -158,14 +158,21 @@ class MBTilesWriter:
         driver = gdal.GetDriverByName('MBTiles')
         ds = driver.Create(filename, 1, 1, 1, options=['TILE_FORMAT=%s' % tile_format] + options)
         ds = None
-        sqlite_driver = ogr.GetDriverByName('SQLite')
-        ds = sqlite_driver.Open(filename, 1)
-        ds.ExecuteSQL("INSERT INTO metadata(name, value) VALUES ('{}', '{}');".format('minzoom', min_zoom))
-        ds.ExecuteSQL("INSERT INTO metadata(name, value) VALUES ('{}', '{}');".format('maxzoom', max_zoom))
-        # will be set properly after writing all tiles
-        ds.ExecuteSQL("INSERT INTO metadata(name, value) VALUES ('{}', '');".format('bounds'))
-        ds = None
+
+        self._execute_sqlite(
+            "INSERT INTO metadata(name, value) VALUES ('{}', '{}');".format('minzoom', min_zoom),
+            "INSERT INTO metadata(name, value) VALUES ('{}', '{}');".format('maxzoom', max_zoom),
+            # will be set properly after writing all tiles
+            "INSERT INTO metadata(name, value) VALUES ('{}', '');".format('bounds')
+        )
         self._zoom = None
+
+    def _execute_sqlite(self, *commands):
+        conn = sqlite3.connect(self.filename)
+        for cmd in commands:
+            conn.execute(cmd)
+        conn.commit()
+        conn.close()
 
     def _initZoomLayer(self, zoom):
         west_edge, south_edge, east_edge, north_edge = self.extent
@@ -181,11 +188,8 @@ class MBTilesWriter:
             first_tile_extent[3]
         ]
 
-        sqlite_driver = ogr.GetDriverByName('SQLite')
-        ds = sqlite_driver.Open(self.filename, 1)
         bounds = ','.join(map(str, zoom_extent))
-        ds.ExecuteSQL("UPDATE metadata SET value='{}' WHERE name='bounds'".format(bounds))
-        ds = None
+        self._execute_sqlite("UPDATE metadata SET value='{}' WHERE name='bounds'".format(bounds))
 
         self._zoomDs = gdal.OpenEx(self.filename, 1, open_options=['ZOOM_LEVEL=%s' % first_tile.z])
         self._first_tile = first_tile
@@ -212,11 +216,8 @@ class MBTilesWriter:
 
     def close(self):
         self._zoomDs = None
-        sqlite_driver = ogr.GetDriverByName('SQLite')
-        ds = sqlite_driver.Open(self.filename, 1)
         bounds = ','.join(map(str, self.extent))
-        ds.ExecuteSQL("UPDATE metadata SET value='{}' WHERE name='bounds'".format(bounds))
-        ds = None
+        self._execute_sqlite("UPDATE metadata SET value='{}' WHERE name='bounds'".format(bounds))
 
 
 class TilesXYZAlgorithm(QgisAlgorithm):
@@ -308,6 +309,8 @@ class TilesXYZAlgorithm(QgisAlgorithm):
         settings.setDestinationCrs(dest_crs)
         settings.setLayers(self.layers)
         settings.setOutputDpi(dpi)
+        if tile_format == 'PNG':
+            settings.setBackgroundColor(QColor(Qt.transparent))
 
         wgs_extent = src_to_wgs.transformBoundingBox(extent)
         wgs_extent = [wgs_extent.xMinimum(), wgs_extent.yMinimum(), wgs_extent.xMaximum(), wgs_extent.yMaximum()]
