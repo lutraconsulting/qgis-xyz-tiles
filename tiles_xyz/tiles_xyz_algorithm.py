@@ -455,12 +455,13 @@ class TilesXYZAlgorithm(QgisAlgorithm):
             results['OUTPUT_FILE'] = output_file
 
         if output_html and output_format == 'Directory':
+            output_dir_safe = output_dir.replace('\\', '/')
             html_code = LEAFLET_TEMPLATE.format(
                 tilesetname = "LeafLet Preview",
                 centerx = wgs_extent[0] + (wgs_extent[2] - wgs_extent[0])/2,
                 centery = wgs_extent[1] + (wgs_extent[3] - wgs_extent[1])/2,
                 avgzoom = (max_zoom + min_zoom) / 2,
-                tilesource = "'file:///{}/{{z}}/{{x}}/{{y}}.{}'".format(output_dir, tile_format.lower()),
+                tilesource = "'file:///{}/{{z}}/{{x}}/{{y}}.{}'".format(output_dir_safe, tile_format.lower()),
                 minzoom = min_zoom,
                 maxzoom = max_zoom,
                 tms = 'true' if is_tms else 'false'
