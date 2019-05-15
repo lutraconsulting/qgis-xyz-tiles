@@ -465,7 +465,8 @@ class TilesXYZAlgorithmDirectory(TilesXYZAlgorithmBase):
         super(TilesXYZAlgorithmDirectory, self).initAlgorithm()
         self.addParameter(QgsProcessingParameterBoolean(self.TMS_CONVENTION,
                                                         self.tr('Use inverted tile Y axis (TMS convention)'),
-                                                        defaultValue=False))
+                                                        defaultValue=False,
+                                                        optional=True))
         self.addParameter(QgsProcessingParameterFolderDestination(self.OUTPUT_DIRECTORY,
                                                                   self.tr('Output directory'),
                                                                   optional=True))
@@ -495,7 +496,7 @@ class TilesXYZAlgorithmDirectory(TilesXYZAlgorithmBase):
         if output_html:
             output_dir_safe = output_dir.replace('\\', '/')
             html_code = LEAFLET_TEMPLATE.format(
-                tilesetname="LeafLet Preview",
+                tilesetname="Leaflet Preview",
                 centerx=self.wgs_extent[0] + (self.wgs_extent[2] - self.wgs_extent[0]) / 2,
                 centery=self.wgs_extent[1] + (self.wgs_extent[3] - self.wgs_extent[1]) / 2,
                 avgzoom=(self.max_zoom + self.min_zoom) / 2,
