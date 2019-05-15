@@ -31,7 +31,7 @@ __copyright__ = '(C) 2019 by Marcel Dancak'
 __revision__ = '$Format:%H$'
 
 from qgis.core import QgsProcessingProvider
-from .tiles_xyz_algorithm import TilesXYZAlgorithm
+from .tiles_xyz_algorithm import TilesXYZAlgorithmDirectory, TilesXYZAlgorithmMBTiles
 
 
 class TilesXYZProvider(QgsProcessingProvider):
@@ -40,7 +40,7 @@ class TilesXYZProvider(QgsProcessingProvider):
         QgsProcessingProvider.__init__(self)
 
         # Load algorithms
-        self.alglist = [TilesXYZAlgorithm()]
+        self.alglist = [TilesXYZAlgorithmDirectory(), TilesXYZAlgorithmMBTiles()]
 
     def unload(self):
         """
