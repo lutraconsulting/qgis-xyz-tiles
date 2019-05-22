@@ -71,6 +71,7 @@ def deg2num(lat_deg, lon_deg, zoom):
     ytile = int((1.0 - math.log(math.tan(lat_rad) + (1 / math.cos(lat_rad))) / math.pi) / 2.0 * n)
     return (xtile, ytile)
 
+
 # Math functions taken from https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames #spellok
 def num2deg(xtile, ytile, zoom):
     n = 2.0 ** zoom
@@ -194,7 +195,8 @@ class TilesXYZAlgorithmBase(QgisAlgorithm):
             settings.setBackgroundColor(QColor(Qt.transparent))
 
         self.wgs_extent = src_to_wgs.transformBoundingBox(extent)
-        self.wgs_extent = [self.wgs_extent.xMinimum(), self.wgs_extent.yMinimum(), self.wgs_extent.xMaximum(), self.wgs_extent.yMaximum()]
+        self.wgs_extent = [self.wgs_extent.xMinimum(), self.wgs_extent.yMinimum(), self.wgs_extent.xMaximum(),
+                           self.wgs_extent.yMaximum()]
 
         metatiles_by_zoom = {}
         metatiles_count = 0
@@ -455,17 +457,16 @@ class DirectoryWriter:
 
 
 class TilesXYZAlgorithmDirectory(TilesXYZAlgorithmBase):
-    TILE_CONVENTION = 'TILE_CONVENTION'
+    TMS_CONVENTION = 'TMS_CONVENTION'
     OUTPUT_DIRECTORY = 'OUTPUT_DIRECTORY'
     OUTPUT_HTML = 'OUTPUT_HTML'
 
     def initAlgorithm(self, config=None):
         super(TilesXYZAlgorithmDirectory, self).initAlgorithm()
-        self.conventions = ['Slippy Map', 'TMS']
-        self.addParameter(QgsProcessingParameterEnum(self.TILE_CONVENTION,
-                                                     self.tr('Tile naming convention'),
-                                                     self.conventions,
-                                                     defaultValue=0))
+        self.addParameter(QgsProcessingParameterBoolean(self.TMS_CONVENTION,
+                                                        self.tr('Use inverted tile Y axis (TMS convention)'),
+                                                        defaultValue=False,
+                                                        optional=True))
         self.addParameter(QgsProcessingParameterFolderDestination(self.OUTPUT_DIRECTORY,
                                                                   self.tr('Output directory'),
                                                                   optional=True))
@@ -473,7 +474,7 @@ class TilesXYZAlgorithmDirectory(TilesXYZAlgorithmBase):
                                                                 self.tr('Output html (Leaflet)'),
                                                                 self.tr('HTML files (*.html)'),
                                                                 optional=True))
-        
+
     def name(self):
         return 'tilesxyzdirectory'
 
@@ -481,13 +482,12 @@ class TilesXYZAlgorithmDirectory(TilesXYZAlgorithmBase):
         return self.tr('Generate XYZ tiles (Directory)')
 
     def processAlgorithm(self, parameters, context, feedback):
-        tile_convention = self.conventions[self.parameterAsEnum(parameters, self.TILE_CONVENTION, context)]
+        is_tms = self.parameterAsBoolean(parameters, self.TMS_CONVENTION, context)
         output_html = self.parameterAsString(parameters, self.OUTPUT_HTML, context)
         output_dir = self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context)
         if not output_dir:
             raise QgsProcessingException(self.tr('You need to specify output directory.'))
 
-        is_tms = tile_convention == 'TMS'
         writer = DirectoryWriter(output_dir, is_tms)
         self.generate(writer, parameters, context, feedback)
 
@@ -496,14 +496,14 @@ class TilesXYZAlgorithmDirectory(TilesXYZAlgorithmBase):
         if output_html:
             output_dir_safe = output_dir.replace('\\', '/')
             html_code = LEAFLET_TEMPLATE.format(
-                tilesetname = "LeafLet Preview",
-                centerx = self.wgs_extent[0] + (self.wgs_extent[2] - self.wgs_extent[0])/2,
-                centery = self.wgs_extent[1] + (self.wgs_extent[3] - self.wgs_extent[1])/2,
-                avgzoom = (self.max_zoom + self.min_zoom) / 2,
-                tilesource = "'file:///{}/{{z}}/{{x}}/{{y}}.{}'".format(output_dir_safe, self.tile_format.lower()),
-                minzoom = self.min_zoom,
-                maxzoom = self.max_zoom,
-                tms = 'true' if is_tms else 'false'
+                tilesetname="Leaflet Preview",
+                centerx=self.wgs_extent[0] + (self.wgs_extent[2] - self.wgs_extent[0]) / 2,
+                centery=self.wgs_extent[1] + (self.wgs_extent[3] - self.wgs_extent[1]) / 2,
+                avgzoom=(self.max_zoom + self.min_zoom) / 2,
+                tilesource="'file:///{}/{{z}}/{{x}}/{{y}}.{}'".format(output_dir_safe, self.tile_format.lower()),
+                minzoom=self.min_zoom,
+                maxzoom=self.max_zoom,
+                tms='true' if is_tms else 'false'
             )
             with open(output_html, "w") as fh:
                 fh.write(html_code)
