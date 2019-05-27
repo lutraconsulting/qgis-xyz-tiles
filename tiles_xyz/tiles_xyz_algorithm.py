@@ -33,6 +33,7 @@ __revision__ = '$Format:%H$'
 import os
 import math
 from uuid import uuid4
+from qgis.core import *
 
 import gdal
 import sqlite3
@@ -193,6 +194,11 @@ class TilesXYZAlgorithmBase(QgisAlgorithm):
         settings.setOutputDpi(dpi)
         if self.tile_format == 'PNG':
             settings.setBackgroundColor(QColor(Qt.transparent))
+        
+        # disable partial labels (they would be cut at the edge of tiles)
+        labeling_engine_settings = settings.labelingEngineSettings()
+        labeling_engine_settings.setFlag(QgsLabelingEngineSettings.UsePartialCandidates, False)
+        settings.setLabelingEngineSettings(labeling_engine_settings)
 
         self.wgs_extent = src_to_wgs.transformBoundingBox(extent)
         self.wgs_extent = [self.wgs_extent.xMinimum(), self.wgs_extent.yMinimum(), self.wgs_extent.xMaximum(),
