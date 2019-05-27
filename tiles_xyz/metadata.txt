@@ -11,7 +11,7 @@ name=Tiles XYZ
 qgisMinimumVersion=3.0
 qgisMaximumVersion=3.6.99
 description=Processing algorithm for generating raster tiles
-version=0.3
+version=0.4
 author=Lutra Consulting
 email=info@lutraconsulting.co.uk
 

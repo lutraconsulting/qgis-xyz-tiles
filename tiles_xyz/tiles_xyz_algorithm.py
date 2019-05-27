@@ -316,6 +316,7 @@ class MBTilesWriter:
         conn.close()
 
     def _init_zoom_layer(self, zoom):
+        self._zoom_ds = None
         west_edge, south_edge, east_edge, north_edge = self.extent
         first_tile = Tile(*deg2num(north_edge, west_edge, zoom), zoom)
         last_tile = Tile(*deg2num(south_edge, east_edge, zoom), zoom)
@@ -482,7 +483,7 @@ class TilesXYZAlgorithmDirectory(TilesXYZAlgorithmBase):
         return self.tr('Generate XYZ tiles (Directory)')
 
     def processAlgorithm(self, parameters, context, feedback):
-        is_tms = self.parameterAsBoolean(parameters, self.TMS_CONVENTION, context)
+        is_tms = self.parameterAsBool(parameters, self.TMS_CONVENTION, context)
         output_html = self.parameterAsString(parameters, self.OUTPUT_HTML, context)
         output_dir = self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context)
         if not output_dir:
