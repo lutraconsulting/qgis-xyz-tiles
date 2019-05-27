@@ -316,6 +316,7 @@ class MBTilesWriter:
         conn.close()
 
     def _init_zoom_layer(self, zoom):
+        self._zoom_ds = None
         west_edge, south_edge, east_edge, north_edge = self.extent
         first_tile = Tile(*deg2num(north_edge, west_edge, zoom), zoom)
         last_tile = Tile(*deg2num(south_edge, east_edge, zoom), zoom)
