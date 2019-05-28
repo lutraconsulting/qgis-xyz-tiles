@@ -33,7 +33,7 @@ __revision__ = '$Format:%H$'
 import os
 import math
 from uuid import uuid4
-from qgis.core import *
+from qgis.core import QgsLabelingEngineSettings
 
 import gdal
 import sqlite3
