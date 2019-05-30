@@ -165,12 +165,12 @@ class TilesXYZAlgorithmBase(QgisAlgorithm):
                                                      self.formats,
                                                      defaultValue=0))
         self.addParameter(QgsProcessingParameterNumber(self.ALPHA,
-                                                       self.tr('Background transparency'),
+                                                       self.tr('Background transparency (applies to PNG only)'),
                                                        minValue=0,
                                                        maxValue=255,
                                                        defaultValue=0))
         self.addParameter(QgsProcessingParameterNumber(self.QUALITY,
-                                                       self.tr('Quality'),
+                                                       self.tr('Quality (applies to PNG only)'),
                                                        minValue=1,
                                                        maxValue=100,
                                                        defaultValue=75))
@@ -318,11 +318,10 @@ class MBTilesWriter:
         self.min_zoom = tile_params.get('min_zoom')
         self.max_zoom = tile_params.get('max_zoom')
         tile_format = tile_params['format']
+        options = []
         if tile_format == 'JPG':
             tile_format = 'JPEG'
             options = ['QUALITY=%s' % tile_params.get('quality', 75)]
-        else:
-            options = ['ZLEVEL=%s' % math.ceil(tile_params.get('quality', 75)*9/100)]
         driver = gdal.GetDriverByName('MBTiles')
         ds = driver.Create(self.filename, 1, 1, 1, options=['TILE_FORMAT=%s' % tile_format] + options)
         ds = None
