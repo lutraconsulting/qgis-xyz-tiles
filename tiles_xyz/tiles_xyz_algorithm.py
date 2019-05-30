@@ -170,7 +170,7 @@ class TilesXYZAlgorithmBase(QgisAlgorithm):
                                                        maxValue=255,
                                                        defaultValue=0))
         self.addParameter(QgsProcessingParameterNumber(self.QUALITY,
-                                                       self.tr('Quality (applies to PNG only)'),
+                                                       self.tr('Quality (applies to JPG only)'),
                                                        minValue=1,
                                                        maxValue=100,
                                                        defaultValue=75))
