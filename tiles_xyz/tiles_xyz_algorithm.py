@@ -139,6 +139,8 @@ class TilesXYZAlgorithmBase(QgisAlgorithm):
     ZOOM_MAX = 'ZOOM_MAX'
     DPI = 'DPI'
     TILE_FORMAT = 'TILE_FORMAT'
+    ALPHA = 'ALPHA'
+    QUALITY = 'QUALITY'
 
     def initAlgorithm(self, config=None):
         self.addParameter(QgsProcessingParameterExtent(self.EXTENT, self.tr('Extent')))
@@ -162,6 +164,16 @@ class TilesXYZAlgorithmBase(QgisAlgorithm):
                                                      self.tr('Tile format'),
                                                      self.formats,
                                                      defaultValue=0))
+        self.addParameter(QgsProcessingParameterNumber(self.ALPHA,
+                                                       self.tr('Background transparency (applies to PNG only)'),
+                                                       minValue=0,
+                                                       maxValue=255,
+                                                       defaultValue=0))
+        self.addParameter(QgsProcessingParameterNumber(self.QUALITY,
+                                                       self.tr('Quality (applies to JPG only)'),
+                                                       minValue=1,
+                                                       maxValue=100,
+                                                       defaultValue=75))
 
     def prepareAlgorithm(self, parameters, context, feedback):
         project = context.project()
@@ -177,8 +189,15 @@ class TilesXYZAlgorithmBase(QgisAlgorithm):
         self.max_zoom = self.parameterAsInt(parameters, self.ZOOM_MAX, context)
         dpi = self.parameterAsInt(parameters, self.DPI, context)
         self.tile_format = self.formats[self.parameterAsEnum(parameters, self.TILE_FORMAT, context)]
-        tile_width = 256
-        tile_height = 256
+        alpha = self.parameterAsInt(parameters, self.ALPHA, context)
+        quality = self.parameterAsInt(parameters, self.QUALITY, context)
+        try:
+            tile_width = self.parameterAsInt(parameters, self.TILE_WIDTH, context)
+            tile_height = self.parameterAsInt(parameters, self.TILE_HEIGHT, context)
+        except AttributeError:
+            # for mbtiles we don't have such settings
+            tile_width = 256
+            tile_height = 256
 
         wgs_crs = QgsCoordinateReferenceSystem('EPSG:4326')
         dest_crs = QgsCoordinateReferenceSystem('EPSG:3857')
@@ -193,8 +212,10 @@ class TilesXYZAlgorithmBase(QgisAlgorithm):
         settings.setLayers(self.layers)
         settings.setOutputDpi(dpi)
         if self.tile_format == 'PNG':
-            settings.setBackgroundColor(QColor(Qt.transparent))
-        
+            color = QColor()
+            color.setAlpha(alpha)
+            settings.setBackgroundColor(color)
+
         # disable partial labels (they would be cut at the edge of tiles)
         labeling_engine_settings = settings.labelingEngineSettings()
         labeling_engine_settings.setFlag(QgsLabelingEngineSettings.UsePartialCandidates, False)
@@ -216,7 +237,7 @@ class TilesXYZAlgorithmBase(QgisAlgorithm):
 
         tile_params = {
             'format': self.tile_format,
-            'quality': 75,
+            'quality': quality,
             'width': tile_width,
             'height': tile_height,
             'min_zoom': self.min_zoom,
@@ -297,11 +318,10 @@ class MBTilesWriter:
         self.min_zoom = tile_params.get('min_zoom')
         self.max_zoom = tile_params.get('max_zoom')
         tile_format = tile_params['format']
+        options = []
         if tile_format == 'JPG':
             tile_format = 'JPEG'
             options = ['QUALITY=%s' % tile_params.get('quality', 75)]
-        else:
-            options = ['ZLEVEL=8']
         driver = gdal.GetDriverByName('MBTiles')
         ds = driver.Create(self.filename, 1, 1, 1, options=['TILE_FORMAT=%s' % tile_format] + options)
         ds = None
@@ -467,9 +487,21 @@ class TilesXYZAlgorithmDirectory(TilesXYZAlgorithmBase):
     TMS_CONVENTION = 'TMS_CONVENTION'
     OUTPUT_DIRECTORY = 'OUTPUT_DIRECTORY'
     OUTPUT_HTML = 'OUTPUT_HTML'
+    TILE_WIDTH = 'TILE_WIDTH'
+    TILE_HEIGHT = 'TILE_HEIGHT'
 
     def initAlgorithm(self, config=None):
         super(TilesXYZAlgorithmDirectory, self).initAlgorithm()
+        self.addParameter(QgsProcessingParameterNumber(self.TILE_WIDTH,
+                                                       self.tr('Tile width'),
+                                                       minValue=1,
+                                                       maxValue=4096,
+                                                       defaultValue=256))
+        self.addParameter(QgsProcessingParameterNumber(self.TILE_HEIGHT,
+                                                       self.tr('Tile height'),
+                                                       minValue=1,
+                                                       maxValue=4096,
+                                                       defaultValue=256))
         self.addParameter(QgsProcessingParameterBoolean(self.TMS_CONVENTION,
                                                         self.tr('Use inverted tile Y axis (TMS convention)'),
                                                         defaultValue=False,
