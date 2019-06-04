@@ -260,17 +260,6 @@ class TilesXYZAlgorithmBase(QgisAlgorithm):
                 settings.setExtent(wgs_to_dest.transformBoundingBox(extent))
                 settings.setOutputSize(size)
 
-                if hasattr(settings, 'setLabelBoundaryGeometry'):
-                    label_area = QgsRectangle(settings.extent())
-                    lab_buffer = label_area.width() * (lab_buffer_px / size.width())
-                    label_area.set(
-                        label_area.xMinimum() + lab_buffer,
-                        label_area.yMinimum() + lab_buffer,
-                        label_area.xMaximum() - lab_buffer,
-                        label_area.yMaximum() - lab_buffer
-                    )
-                    settings.setLabelBoundaryGeometry(QgsGeometry.fromRect(label_area))
-
                 image = QImage(size, QImage.Format_ARGB32_Premultiplied)
                 image.fill(Qt.transparent)
                 dpm = settings.outputDpi() / 25.4 * 1000
