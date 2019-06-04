@@ -429,7 +429,7 @@ LEAFLET_TEMPLATE = '''
        margin: 0;
        padding: 0;
     }}
-    #map{{
+    html, body, #map{{
        width: 100%; 
        height: 100%;
     }}
