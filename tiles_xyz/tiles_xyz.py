@@ -34,6 +34,7 @@ import os
 import sys
 import inspect
 
+from PyQt5.QtCore import QSettings, QLocale, QTranslator, QCoreApplication
 from qgis.core import QgsProcessingAlgorithm, QgsApplication
 from .tiles_xyz_provider import TilesXYZProvider
 
@@ -49,6 +50,10 @@ class TilesXYZPlugin(object):
         self.provider = TilesXYZProvider()
 
     def initGui(self):
+        locale = QLocale(QSettings().value('locale/userLocale'))
+        self.translator = QTranslator()
+        if self.translator.load(locale, 'tiles_xyz', '-', cmd_folder):
+            QCoreApplication.installTranslator(self.translator)
         QgsApplication.processingRegistry().addProvider(self.provider)
 
     def unload(self):

@@ -37,7 +37,7 @@ from qgis.core import QgsLabelingEngineSettings
 
 import gdal
 import sqlite3
-from qgis.PyQt.QtCore import QSize, Qt, QByteArray, QBuffer
+from qgis.PyQt.QtCore import QSize, Qt, QByteArray, QBuffer, QCoreApplication
 from qgis.PyQt.QtGui import QColor, QImage, QPainter
 from qgis.core import (QgsProcessingException,
                        QgsProcessingParameterEnum,
@@ -144,32 +144,32 @@ class TilesXYZAlgorithmBase(QgisAlgorithm):
     QUALITY = 'QUALITY'
 
     def initAlgorithm(self, config=None):
-        self.addParameter(QgsProcessingParameterExtent(self.EXTENT, self.tr('Extent')))
+        self.addParameter(QgsProcessingParameterExtent(self.EXTENT, QCoreApplication.translate('Base', 'Extent')))
         self.addParameter(QgsProcessingParameterNumber(self.ZOOM_MIN,
-                                                       self.tr('Minimum zoom'),
+                                                       QCoreApplication.translate('Base', 'Minimum zoom'),
                                                        minValue=0,
                                                        maxValue=25,
                                                        defaultValue=12))
         self.addParameter(QgsProcessingParameterNumber(self.ZOOM_MAX,
-                                                       self.tr('Maximum zoom'),
+                                                       QCoreApplication.translate('Base', 'Maximum zoom'),
                                                        minValue=0,
                                                        maxValue=25,
                                                        defaultValue=12))
         self.addParameter(QgsProcessingParameterNumber(self.DPI,
-                                                       self.tr('DPI'),
+                                                       QCoreApplication.translate('Base', 'DPI'),
                                                        minValue=48,
                                                        maxValue=600,
                                                        defaultValue=96))
         self.formats = ['PNG', 'JPG']
         self.addParameter(QgsProcessingParameterEnum(self.TILE_FORMAT,
-                                                     self.tr('Tile format'),
+                                                     QCoreApplication.translate('Base', 'Tile format'),
                                                      self.formats,
                                                      defaultValue=0))
         self.addParameter(QgsProcessingParameterBoolean(self.TRANSPARENT,
-                                                        self.tr('Use transparent background (PNG only)'),
+                                                        QCoreApplication.translate('Base', 'Use transparent background (PNG only)'),
                                                         defaultValue=True))
         self.addParameter(QgsProcessingParameterNumber(self.QUALITY,
-                                                       self.tr('Quality (JPG only)'),
+                                                       QCoreApplication.translate('Base', 'Quality (JPG only)'),
                                                        minValue=1,
                                                        maxValue=100,
                                                        defaultValue=75))
@@ -288,7 +288,7 @@ class TilesXYZAlgorithmBase(QgisAlgorithm):
         min_zoom = self.parameterAsInt(parameters, self.ZOOM_MIN, context)
         max_zoom = self.parameterAsInt(parameters, self.ZOOM_MAX, context)
         if max_zoom < min_zoom:
-            return False, self.tr('Invalid zoom levels range.')
+            return False, QCoreApplication.translate('Base', 'Invalid zoom levels range.')
 
         return super().checkParameterValues(parameters, context)
 
