@@ -142,7 +142,8 @@ class TilesXYZAlgorithmBase(QgisAlgorithm):
     TILE_FORMAT = 'TILE_FORMAT'
     TRANSPARENT = 'TRANSPARENT'
     QUALITY = 'QUALITY'
-
+    METATILESIZE = 'METATILESIZE'
+    
     def initAlgorithm(self, config=None):
         self.addParameter(QgsProcessingParameterExtent(self.EXTENT, self.tr('Extent')))
         self.addParameter(QgsProcessingParameterNumber(self.ZOOM_MIN,
@@ -173,6 +174,12 @@ class TilesXYZAlgorithmBase(QgisAlgorithm):
                                                        minValue=1,
                                                        maxValue=100,
                                                        defaultValue=75))
+        self.addParameter(QgsProcessingParameterNumber(self.METATILESIZE,
+                                                       self.tr('Metatile size'),
+                                                       minValue=1,
+                                                       maxValue=20,
+                                                       defaultValue=4))
+
 
     def prepareAlgorithm(self, parameters, context, feedback):
         project = context.project()
@@ -230,7 +237,7 @@ class TilesXYZAlgorithmBase(QgisAlgorithm):
         metatiles_by_zoom = {}
         metatiles_count = 0
         for zoom in range(self.min_zoom, self.max_zoom + 1):
-            metatiles = get_metatiles(self.wgs_extent, zoom, 4)
+            metatiles = get_metatiles(self.wgs_extent, zoom, self.metatilesize)
             metatiles_by_zoom[zoom] = metatiles
             metatiles_count += len(metatiles)
 
