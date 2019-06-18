@@ -53,7 +53,8 @@ from qgis.core import (QgsProcessingException,
                        QgsMapSettings,
                        QgsCoordinateTransform,
                        QgsCoordinateReferenceSystem,
-                       QgsMapRendererCustomPainterJob)
+                       QgsMapRendererCustomPainterJob,
+                       QgsProject)
 from processing.algs.qgis.QgisAlgorithm import QgisAlgorithm
 
 
@@ -139,7 +140,7 @@ class TilesXYZAlgorithmBase(QgisAlgorithm):
     ZOOM_MAX = 'ZOOM_MAX'
     DPI = 'DPI'
     TILE_FORMAT = 'TILE_FORMAT'
-    ALPHA = 'ALPHA'
+    TRANSPARENT = 'TRANSPARENT'
     QUALITY = 'QUALITY'
 
     def initAlgorithm(self, config=None):
@@ -164,13 +165,11 @@ class TilesXYZAlgorithmBase(QgisAlgorithm):
                                                      self.tr('Tile format'),
                                                      self.formats,
                                                      defaultValue=0))
-        self.addParameter(QgsProcessingParameterNumber(self.ALPHA,
-                                                       self.tr('Background transparency (applies to PNG only)'),
-                                                       minValue=0,
-                                                       maxValue=255,
-                                                       defaultValue=0))
+        self.addParameter(QgsProcessingParameterBoolean(self.TRANSPARENT,
+                                                        self.tr('Use transparent background (PNG only)'),
+                                                        defaultValue=True))
         self.addParameter(QgsProcessingParameterNumber(self.QUALITY,
-                                                       self.tr('Quality (applies to JPG only)'),
+                                                       self.tr('Quality (JPG only)'),
                                                        minValue=1,
                                                        maxValue=100,
                                                        defaultValue=75))
@@ -189,7 +188,7 @@ class TilesXYZAlgorithmBase(QgisAlgorithm):
         self.max_zoom = self.parameterAsInt(parameters, self.ZOOM_MAX, context)
         dpi = self.parameterAsInt(parameters, self.DPI, context)
         self.tile_format = self.formats[self.parameterAsEnum(parameters, self.TILE_FORMAT, context)]
-        alpha = self.parameterAsInt(parameters, self.ALPHA, context)
+        transparent = self.parameterAsBool(parameters, self.TRANSPARENT, context)
         quality = self.parameterAsInt(parameters, self.QUALITY, context)
         try:
             tile_width = self.parameterAsInt(parameters, self.TILE_WIDTH, context)
@@ -211,10 +210,13 @@ class TilesXYZAlgorithmBase(QgisAlgorithm):
         settings.setDestinationCrs(dest_crs)
         settings.setLayers(self.layers)
         settings.setOutputDpi(dpi)
-        if self.tile_format == 'PNG':
-            color = QColor()
-            color.setAlpha(alpha)
-            settings.setBackgroundColor(color)
+        canvas_red = QgsProject.instance().readNumEntry('Gui', '/CanvasColorRedPart', 255)[0]
+        canvas_green = QgsProject.instance().readNumEntry('Gui', '/CanvasColorGreenPart', 255)[0]
+        canvas_blue = QgsProject.instance().readNumEntry('Gui', '/CanvasColorBluePart', 255)[0]
+        color = QColor(canvas_red, canvas_green, canvas_blue, 255)
+        if self.tile_format == 'PNG' and transparent:
+            color.setAlpha(0)
+        settings.setBackgroundColor(color)
 
         # disable partial labels (they would be cut at the edge of tiles)
         labeling_engine_settings = settings.labelingEngineSettings()
@@ -257,17 +259,6 @@ class TilesXYZAlgorithmBase(QgisAlgorithm):
                 extent = QgsRectangle(*metatile.extent())
                 settings.setExtent(wgs_to_dest.transformBoundingBox(extent))
                 settings.setOutputSize(size)
-
-                if hasattr(settings, 'setLabelBoundaryGeometry'):
-                    label_area = QgsRectangle(settings.extent())
-                    lab_buffer = label_area.width() * (lab_buffer_px / size.width())
-                    label_area.set(
-                        label_area.xMinimum() + lab_buffer,
-                        label_area.yMinimum() + lab_buffer,
-                        label_area.xMaximum() - lab_buffer,
-                        label_area.yMaximum() - lab_buffer
-                    )
-                    settings.setLabelBoundaryGeometry(QgsGeometry.fromRect(label_area))
 
                 image = QImage(size, QImage.Format_ARGB32_Premultiplied)
                 image.fill(Qt.transparent)
@@ -434,13 +425,13 @@ LEAFLET_TEMPLATE = '''
    integrity="sha512-GffPMF3RvMeYyc1LWMHtK8EbPv0iNZ8/oTtHPx9/cc2ILxQ+u905qIwdpULaqDkyBKgOaB57QTMg7ztg8Jm2Og=="
    crossorigin=""></script>
   <style type="text/css">
-    #map{{
-       left: 10px;
-       right: 10px;
-       top: 10px;
-       bottom: 10px;
-       width: 600px; 
-       height: 400px;
+    body {{
+       margin: 0;
+       padding: 0;
+    }}
+    html, body, #map{{
+       width: 100%; 
+       height: 100%;
     }}
   </style>
 </head>
