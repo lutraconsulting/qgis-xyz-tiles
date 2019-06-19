@@ -197,6 +197,7 @@ class TilesXYZAlgorithmBase(QgisAlgorithm):
         self.tile_format = self.formats[self.parameterAsEnum(parameters, self.TILE_FORMAT, context)]
         transparent = self.parameterAsBool(parameters, self.TRANSPARENT, context)
         quality = self.parameterAsInt(parameters, self.QUALITY, context)
+        self.metatilesize = self.parameterAsInt(parameters, self.METATILESIZE, context)
         try:
             tile_width = self.parameterAsInt(parameters, self.TILE_WIDTH, context)
             tile_height = self.parameterAsInt(parameters, self.TILE_HEIGHT, context)
