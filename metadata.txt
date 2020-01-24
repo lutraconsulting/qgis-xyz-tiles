@@ -1,0 +1,47 @@
+# This file contains metadata for your plugin.
+
+# This file should be included when you package your plugin.# Mandatory items:
+
+[general]
+name=Mappia Publisher
+qgisMinimumVersion=3.0
+description=Share your maps online.
+version=0.1
+author=Danilo da Silveira Figueira / CSR UFMG
+email=danilo@csr.ufmg.br
+
+about=Publish your maps online. Mappia is an online mapping platform. Easy and free. Make your QGIS projects accessible to everybody. It automatically configure your map to show online. It uses the symbology your defined. You can customize the generated maps online interactions into an user friendly interface. The service allows to use how many maps you want, it doesn't require any server. The map data is stored in your Github Account and you have the total control of it. Share your stylized QGIS maps. Combine maps from multiple users sources and create an interactive platform online. For creating enhanced map interactions check our API at: https://mappia.earth/.
+
+tracker=https://github.com/MappiaEarth/Publish-Mappia/issues
+repository=https://github.com/MappiaEarth/Publish-Mappia
+# End of mandatory metadata
+
+# Recommended items:
+
+hasProcessingProvider=yes
+# Uncomment the following line and add your changelog:
+# changelog=
+
+# Tags are comma separated with spaces allowed
+tags=wms, wfs, web, tiles, shapefile, raster, project, vector, openlayers, layers, geometry, analysis
+
+homepage=https://mappia.earth
+category=Analysis
+icon=icon.png
+# experimental flag
+experimental=False
+
+# deprecated flag (applies to the whole plugin, not just a single version)
+deprecated=False
+
+# Since QGIS 3.8, a comma separated list of plugins to be installed
+# (or upgraded) can be specified.
+# Check the documentation for more information.
+# plugin_dependencies=
+
+Category of the plugin: Raster, Vector, Database or Web
+# category=
+
+# If the plugin can run on QGIS Server.
+server=True
+
