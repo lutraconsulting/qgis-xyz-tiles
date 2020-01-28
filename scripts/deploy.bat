@@ -21,5 +21,7 @@ set QT_PLUGIN_PATH=%OSGEO4W_ROOT%\apps\qgis\qtplugins;%OSGEO4W_ROOT%\apps\qt5\pl
 set QGIS_PLUGINPATH=%OSGEO4W_ROOT%\apps\qgis\qtplugins;%OSGEO4W_ROOT%\apps\qt5\plugins
 rem easy_install pb_tool
 
+%~d0
+cd %~dp0../src/
 
 pb_tool deploy
