@@ -111,7 +111,6 @@ class Tile:
 def get_metatiles(extent, zoom, size=4):
     #west_edge, south_edge, east_edge, north_edge = extent
     #[extent.xMinimum(), extent.yMinimum(), extent.xMaximum(), extent.yMaximum()]
-    #danilo
     left_tile, top_tile = deg2num(extent.yMaximum(), extent.xMinimum(), zoom)
     right_tile, bottom_tile = deg2num(extent.yMinimum(), extent.xMaximum(), zoom)
 
@@ -242,7 +241,7 @@ class DirectoryWriter:
         render.finished.connect(finished)
         render.start()
 
-    def writeLegendJson(self, layer, mapAttr, operation):#mapSymbology, mapTitle, mapAttr, operation):
+    def writeLegendJson(self, layer, mapAttr, operation):
         mapTitle = layer.name()
         result = []
         if isinstance(layer, QgsRasterLayer):
@@ -269,11 +268,9 @@ class DirectoryWriter:
     def getGitUrl(githubUser, githubRepository):
         return "https://github.com/" + githubUser + "/" + githubRepository + "/"
 
-    '''
-    Sem password apenas quando o usuário for usar uma SSHKey.
-    '''
+    #No password to allow using configured SSHKey.
     @staticmethod
-    def getGitPassUrl(repository, user, password = None):
+    def getGitPassUrl(repository, user, password=None):
         if password is None or password == '':
             return "https://github.com/" + user + "/" + repository + ".git"
         else:
@@ -350,6 +347,7 @@ class DirectoryWriter:
     def close(self):
         pass
 
+#Supported Operations
 class OperationType(Enum):
     RAW = 0
     INTEGRAL = 1
@@ -394,7 +392,6 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     LAYERS = 'LAYERS'
     OPERATION = 'OPERATION'
     OUTPUT_DIRECTORY = 'OUTPUT_DIRECTORY'
-    ZOOM_MIN = 'ZOOM_MIN'
     ZOOM_MAX = 'ZOOM_MAX'
     EXTENT = 'EXTENT'
     LAYER_ATTRIBUTE = 'LAYER_ATTRIBUTE'
@@ -405,7 +402,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     GITHUB_PASS = 'GITHUB_PASS'
     GIT_EXECUTABLE = 'GIT_EXECUTABLE'
 
-    # Tamanho padrão dos tiles do Geoserver
+    # Default size of the WMS tiles.
     WIDTH = 256
     HEIGHT = 256
 
@@ -433,16 +430,6 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                 self.tr('Operation Type'),
                 options=[self.tr(curOption) for curOption in OperationType.getOptions()],
                 defaultValue=9
-            )
-        )
-
-        self.addParameter(
-            QgsProcessingParameterNumber(
-                self.ZOOM_MIN,
-                self.tr('Minimum zoom'),
-                minValue=0,
-                maxValue=25,
-                defaultValue=1
             )
         )
 
@@ -505,7 +492,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             )
         )
 
-    #Danilo cria os metatiles pro layer na projeção dada (proje~~ao é a string EPSG e tal
+    #Create the metatiles to the given layer in given zoom levels
     def createLayerMetatiles(self, projection, layer, minZoom, maxZoom):
         mapExtentReprojected = self.getMapExtent(layer, projection)
         metatiles_by_zoom = {}
@@ -515,7 +502,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             metatiles_by_zoom[zoom] = metatiles
         return metatiles_by_zoom
 
-    #Danilo pega o extents do mapa
+    #Return the map extents in the given projection
     def getMapExtent(self, layer, projection):
         mapExtent = layer.extent()
         src_to_proj = QgsCoordinateTransform(layer.crs(), projection, layer.transformContext())
@@ -523,7 +510,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
     def generate(self, writer, parameters, context, feedback):
         feedback.setProgress(1)
-        min_zoom = self.parameterAsInt(parameters, self.ZOOM_MIN, context)
+        min_zoom = 0
         max_zoom = self.parameterAsInt(parameters, self.ZOOM_MAX, context)
         outputFormat = QImage.Format_ARGB32
         layerAttr = self.parameterAsString(parameters, self.LAYER_ATTRIBUTE, context)
@@ -566,7 +553,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         feedback.pushConsoleInfo('Finished map tile generation.')
         if gitExecutable:
             createdTag = writer.publishTilesToGitHub(gitExecutable, ghUser, ghRepository, ghPassword)
-            #Danilo e o espaço no nome do mapa?
+            #FIXME Space in the map name will cause errors.
             storeUrl = writer.getGitUrl(ghUser, ghRepository) + "@" + createdTag + "/"
             feedback.pushConsoleInfo(
                 "View the results online: \nhttps://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl
@@ -576,7 +563,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                                      + ",".join(["GH:" + layer.name().lower() + ";" + layerAttr for layer in layers]))
         writer.close()
 
-    #Danilo retorna a QImage do mapa inteiro renderizado no nivel de zoom do metatile
+    #Return the rendered map (QImage) for the metatile zoom level.
     def renderMetatile(self, metatile, dest_crs, outputFormat, renderSettings, transformContext, sourceCrs):
         wgs_to_dest = QgsCoordinateTransform(sourceCrs, dest_crs, transformContext)
         renderSettings.setExtent(wgs_to_dest.transformBoundingBox(QgsRectangle(*metatile.extent())))
@@ -593,7 +580,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         painter.end()
         return image
 
-    #Danilo configura o processo de renderização para gerar tiles do WMS
+    #Configure the rendering settings for the WMS tiles.
     def createLayerRenderSettings(self, layer, dest_crs, outputFormat):
         settings = QgsMapSettings()
         settings.setFlag(QgsMapSettings.Flag.Antialiasing, on=False)
@@ -620,11 +607,11 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             layer.resampleFilter().setZoomedOutResampler(None)
             layer.resampleFilter().setOn(False)
         except:
-            pass #Não é um mapa raster
+            pass #Is not a raster
         return settings
 
     def checkParameterValues(self, parameters, context):
-        min_zoom = self.parameterAsInt(parameters, self.ZOOM_MIN, context)
+        min_zoom = 0
         max_zoom = self.parameterAsInt(parameters, self.ZOOM_MAX, context)
         if max_zoom < min_zoom:
             return False, self.tr('Invalid zoom levels range.')
@@ -638,73 +625,15 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         self.layers = [l for l in project.layerTreeRoot().layerOrder() if l in visible_layers]
         return True
 
-
-    '''
-    def processAlgorithm(self, parameters, context, feedback):
-        """
-        Here is where the processing itself takes place.
-        """
-
-        # Retrieve the feature source and sink. The 'dest_id' variable is used
-        # to uniquely identify the feature sink, and must be included in the
-        # dictionary returned by the processAlgorithm function.
-        source = self.parameterAsSource(parameters, self.INPUT, context)
-        (sink, dest_id) = self.parameterAsSink(parameters, self.OUTPUT,
-                                               context, source.fields(), source.wkbType(), source.sourceCrs())
-
-        # Compute the number of steps to display within the progress bar and
-        # get features from source
-        total = 100.0 / source.featureCount() if source.featureCount() else 0
-        features = source.getFeatures()
-
-        for current, feature in enumerate(features):
-            # Stop the algorithm if cancel button has been clicked
-            if feedback.isCanceled():
-                break
-
-            # Add a feature in the sink
-            sink.addFeature(feature, QgsFeatureSink.FastInsert)
-
-            # Update the progress bar
-            feedback.setProgress(int(current * total))
-
-        # Return the results of the algorithm. In this case our only result is
-        # the feature sink which contains the processed features, but some
-        # algorithms may return multiple feature sinks, calculated numeric
-        # statistics, etc. These should all be included in the returned
-        # dictionary, with keys matching the feature corresponding parameter
-        # or output names.
-        return {self.OUTPUT: dest_id}
-    '''
-
     #Danilo
     def processAlgorithm(self, parameters, context, feedback):
-        is_tms = False #self.parameterAsBool(parameters, self.TMS_CONVENTION, context)
+        is_tms = False
         output_dir = self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context)
         if not output_dir:
             raise QgsProcessingException(self.tr('You need to specify output directory.'))
-
         writer = DirectoryWriter(output_dir, is_tms)
         self.generate(writer, parameters, context, feedback)
-
         results = {'OUTPUT_DIRECTORY': output_dir}
-        '''
-        if output_html:
-            output_dir_safe = output_dir.replace('\\', '/')
-            html_code = LEAFLET_TEMPLATE.format(
-                tilesetname="Leaflet Preview",
-                centerx=self.wgs_extent[0] + (self.wgs_extent[2] - self.wgs_extent[0]) / 2,
-                centery=self.wgs_extent[1] + (self.wgs_extent[3] - self.wgs_extent[1]) / 2,
-                avgzoom=(self.max_zoom + self.min_zoom) / 2,
-                tilesource="'file:///{}/{{z}}/{{x}}/{{y}}.{}'".format(output_dir_safe, self.tile_format.lower()),
-                minzoom=self.min_zoom,
-                maxzoom=self.max_zoom,
-                tms='true' if is_tms else 'false'
-            )
-            with open(output_html, "w") as fh:
-                fh.write(html_code)
-            results['OUTPUT_HTML'] = output_html
-        '''
         return results
 
 
@@ -716,7 +645,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'GenerateTilesXYZ' #Danilo
+        return 'Web Publisher'
 
     def displayName(self):
         """
@@ -740,7 +669,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         contain lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'Share maps web'
+        return 'Share maps'
 
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)
@@ -748,12 +677,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     def createInstance(self):
         return MappiaPublisherAlgorithm()
 
-
 def install(package):
-    #import subprocess
-    #import sys
-    #subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-    #subprocess.call([sys.executable, '-m', 'pip', 'install', '{0}=={1}'.format(pkg, version)])
     if hasattr(pip, 'main'):
         pip.main(['install', package])
     else:
@@ -1016,8 +940,6 @@ class WMSCapabilities:
         newLayerDescription = xmltodict.parse(
             WMSCapabilities.getMapDescription(filename, latMinX, latMinY, latMaxX, latMaxY, projMinX, projMinY,
                                               projMaxX, projMaxY))['CONTENT']
-        # print(doc['WMT_MS_Capabilities']['Capability']['Layer'])
-        # print(newLayerDescription)
         if 'Layer' in doc['WMT_MS_Capabilities']['Capability']['Layer']:
             doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer'].append(newLayerDescription['Layer'])
         else:

@@ -53,9 +53,8 @@ class MappiaPublisherProvider(QgsProcessingProvider):
         """
         Loads all algorithms belonging to this provider.
         """
-        self.addAlgorithm(MappiaPublisherAlgorithm())
         # add additional algorithms here
-        # self.addAlgorithm(MyOtherAlgorithm())
+        self.addAlgorithm(MappiaPublisherAlgorithm())
 
     def id(self):
         """
@@ -63,7 +62,7 @@ class MappiaPublisherProvider(QgsProcessingProvider):
         string should be a unique, short, character only string, eg "qgis" or
         "gdal". This string should not be localised.
         """
-        return 'Mappia Share'
+        return 'MappiaShare'
 
     def name(self):
         """
@@ -72,7 +71,7 @@ class MappiaPublisherProvider(QgsProcessingProvider):
 
         This string should be short (e.g. "Lastools") and localised.
         """
-        return self.tr('Mappia Share')
+        return self.tr('Mappia')
 
     def icon(self):
         """
