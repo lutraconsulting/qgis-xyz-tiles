@@ -24,4 +24,6 @@ rem easy_install pb_tool
 %~d0
 cd %~dp0../src/
 
-pb_tool deploy
+call pb_tool deploy
+
+cd %~dp0

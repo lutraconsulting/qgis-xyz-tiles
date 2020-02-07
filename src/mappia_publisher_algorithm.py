@@ -32,6 +32,7 @@ __revision__ = '$Format:%H$'
 
 import math
 import os
+import re
 import csv
 import json
 import collections
@@ -94,6 +95,11 @@ def num2deg(xtile, ytile, zoom):
     lat_deg = math.degrees(lat_rad)
     return (lat_deg, lon_deg)
 
+# https://gis.stackexchange.com/questions/130027/getting-a-plugin-path-using-python-in-qgis
+def resolve(name, basepath=None):
+    if not basepath:
+      basepath = os.path.dirname(os.path.realpath(__file__))
+    return os.path.join(basepath, name)
 
 # From Tiles XYZ algorithm
 class Tile:
@@ -106,6 +112,33 @@ class Tile:
         lat1, lon1 = num2deg(self.x, self.y, self.z)
         lat2, lon2 = num2deg(self.x + 1, self.y + 1, self.z)
         return [lon1, lat2, lon2, lat1]
+
+class OptionsCfg:
+
+    @staticmethod
+    def createCfg(zoom_max=None, gitExe=None, attrName=None, ghUser=None, ghRepository=None, folder=None):
+        defaults = dict()
+        defaults["zoom_max"] = zoom_max if zoom_max is not None else 9
+        defaults["git_exe"] = gitExe if gitExe is not None else ''
+        defaults["attrName"] = attrName if attrName is not None else '1'
+        defaults["gh_user"] = ghUser if ghUser is not None else ''
+        defaults["gh_repository"] = ghRepository if ghRepository is not None else ''
+        defaults["folder"] = folder if folder is not None else ''
+        return defaults
+
+    @staticmethod
+    def write(zoom_max, gitExe, attrName, ghUser, ghRepository, folder):
+        with open(resolve("options.json"), 'w', encoding="utf-8") as f:
+            json.dump(OptionsCfg.createCfg(zoom_max, gitExe, attrName, ghUser, ghRepository, folder), f)
+
+    @staticmethod
+    def read():
+        with open(resolve("options.json"), 'r', encoding="utf-8") as f:
+            cfg = json.load(f)
+            defaults = OptionsCfg.createCfg()
+            for key in cfg.keys():
+                defaults[key] = cfg[key]
+        return defaults
 
 
 def get_metatiles(extent, zoom, size=4):
@@ -264,20 +297,22 @@ class DirectoryWriter:
         jsonFile = Path(os.path.join(self.folder, mapTitle, mapAttr, operation, "legend.json"))
         jsonFile.write_text(json.dumps(result), encoding="utf-8")
 
+    def close(self):
+        pass
+
+
+class GitHub:
     @staticmethod
     def getGitUrl(githubUser, githubRepository):
         return "https://github.com/" + githubUser + "/" + githubRepository + "/"
 
     #No password to allow using configured SSHKey.
     @staticmethod
-    def getGitPassUrl(repository, user, password=None):
-        if password is None or password == '':
-            return "https://github.com/" + user + "/" + repository + ".git"
-        else:
-            return "https://" + user + ":" + password + "@github.com/" + user + "/" + repository + ".git"
+    def getGitPassUrl(user, repository, password):
+        return "https://" + user + ":" + password + "@github.com/" + user + "/" + repository + ".git"
 
     @staticmethod
-    def __lsremote(url):
+    def lsremote(url):
         import git
         remote_refs = {}
         g = git.cmd.Git()
@@ -287,65 +322,127 @@ class DirectoryWriter:
         return remote_refs
 
     @staticmethod
-    def existsRepository(githubUser, githubRepository):
+    def existsRepository(user, repository, feedback):
         try:
-            result = DirectoryWriter.__lsremote(githubUser, githubRepository)
+            result = GitHub.lsremote(GitHub.getGitUrl(user, repository))
             return True
         except:
             return False
 
-    def publishTilesToGitHub(self, gitExecutable, user, repository, password=None):  # ghRepository, ghUser, ghPassphrase
-        install("gitpython")
-        from git import Repo
-        from git import InvalidGitRepositoryError
-
+    @staticmethod
+    def isOptionsOk(folder, gitExecutable, user, repository, feedback):
         gitProgramFolder = os.path.dirname(gitExecutable)
-        if not self.existsRepository(user, repository):
-            print("The repository " + repository + " doesn't exists.\nPlease create a new one at https://github.com/new .")
-            return None
+        # if not os.environ.get('GIT_PYTHON_GIT_EXECUTABLE', ''):
+        feedback.pushConsoleInfo(gitProgramFolder)
+        os.environ['GIT_PYTHON_GIT_EXECUTABLE'] = gitExecutable
         initialPath = os.environ['PATH']
         try:
             os.environ['PATH'].split(os.pathsep).index(gitProgramFolder)
         except:
             os.environ["PATH"] = os.environ["PATH"] + os.pathsep + gitProgramFolder
 
+        install("gitpython")
+        from git import Repo
+        from git import InvalidGitRepositoryError
+
+        #feedback.pushConsoleInfo('Github found commiting to your account.')
+        if not GitHub.existsRepository(user, repository, feedback):
+            feedback.pushConsoleInfo("The repository " + repository + " doesn't exists.\nPlease create a new one at https://github.com/new .")
+            return False
+
         #Cria ou pega o repositório atual.
         repo = None
-        if not os.path.exists(self.folder):
-            repo = Repo.clone_from(self.getGitUrl(user, repository), self.folder)
-            assert (os.path.exists(self.folder))
+        if not os.path.exists(folder) or os.path.exists(folder) and not os.listdir(folder):
+            repo = Repo.clone_from(GitHub.getGitUrl(user, repository), folder)
+            assert (os.path.exists(folder))
         else:
             try:
-                repo = Repo(self.folder)
+                repo = Repo(folder)
+                repoUrl = repo.git.remote("-v")
+                expectedUrl = GitHub.getGitUrl(user, repository)
+                if repoUrl and not (expectedUrl in re.compile("[\\n\\t ]").split(repoUrl)):
+                    feedback.pushConsoleInfo("Your remote URL " + repoUrl + " does not match the expected url " + expectedUrl)
+                    return False
             except InvalidGitRepositoryError:
-                repo = Repo.init(self.folder, bare=False)
+                feedback.pushConsoleInfo("The destination folder must be a repository or an empty folder.")
+                #repo = Repo.init(folder, bare=False)
+                return False
+
+        if repo.git.status("--porcelain"):
+            feedback.pushConsoleInfo("Error: Local repository is not clean.\nPlease commit the changes made to local repository before run.\nUse: git add * and git commit -m \"MSG\"")
+            return False
+        return True
+
+    @staticmethod
+    def publishTilesToGitHub(folder, gitExecutable, user, repository, feedback, password=None):  # ghRepository, ghUser, ghPassphrase
+        gitProgramFolder = os.path.dirname(gitExecutable)
+        #if not os.environ.get('GIT_PYTHON_GIT_EXECUTABLE', ''):
+        feedback.pushConsoleInfo(gitProgramFolder)
+        print(gitProgramFolder)
+        os.environ['GIT_PYTHON_GIT_EXECUTABLE'] = gitExecutable
+        initialPath = os.environ['PATH']
+        try:
+            os.environ['PATH'].split(os.pathsep).index(gitProgramFolder)
+        except:
+            os.environ["PATH"] = os.environ["PATH"] + os.pathsep + gitProgramFolder
+
+        install("gitpython")
+        from git import Repo
+        from git import InvalidGitRepositoryError
+
+        feedback.pushConsoleInfo('Github found commiting to your account.')
+
+        #Não está funcionando a validação
+        feedback.pushConsoleInfo(user + ' at ' + repository)
+        if not GitHub.existsRepository(user, repository, feedback):
+            feedback.pushConsoleInfo("The repository " + repository + " doesn't exists.\nPlease create a new one at https://github.com/new .")
+            return None
+
+        #Cria ou pega o repositório atual.
+        repo = None
+        if not os.path.exists(folder) or os.path.exists(folder) and not os.listdir(folder):
+            repo = Repo.clone_from(GitHub.getGitUrl(user, repository), folder)
+            assert (os.path.exists(folder))
+        else:
+            try:
+                repo = Repo(folder)
+            except InvalidGitRepositoryError:
+                feedback.pushConsoleInfo("The destination folder must be a repository or an empty folder.")
+                repo = Repo.init(folder, bare=False)
 
         now = datetime.now()
         # https://stackoverflow.com/questions/6565357/git-push-requires-username-and-password
         repo.git.config("credential.helper", "store")
         repo.git.config("--global", "credential.helper", "'cache --timeout 7200'")
+        feedback.pushConsoleInfo('Git: Fetch github.')
+        repo.git.fetch(GitHub.getGitUrl(user, repository), "master")
+        feedback.pushConsoleInfo('Git: Add all generated tiles to your repository.')
         repo.git.add(all=True)  # Adiciona todos arquivos
-        repo.git.pull(self.getGitUrl(user, repository), "master")
-        repo.git.push(self.getGitUrl(user, repository), "master:refs/heads/master")
-
+        #feedback.pushConsoleInfo("Git: Pulling your repository current state.")
+        #repo.git.pull("-s recursive", "-X ours", GitHub.getGitUrl(user, repository), "master")
+        #feedback.pushConsoleInfo("Git: Mergin.")
+        #repo.git.merge("-s recursive", "-X ours")
+        feedback.pushConsoleInfo("Git: Pushing changes.")
+        #repo.git.push(GitHub.getGitUrl(user, repository), "master:refs/heads/master")
         if repo.index.diff(None) or repo.untracked_files:
-            print("No changes")
+            feedback.pushConsoleInfo("No changes, nothing to commit.")
+        feedback.pushConsoleInfo("Git: Committing changes.")
         repo.git.commit(m="QGIS - " + now.strftime("%d/%m/%Y %H:%M:%S"))
         originName = "mappia"
         try:
-            repo.git.remote("add", originName, self.getGitUrl(user, repository))
+            repo.git.remote("add", originName, GitHub.getGitUrl(user, repository))
         except:
-            repo.git.remote("set-url", originName, self.getGitUrl(user, repository))
+            repo.git.remote("set-url", originName, GitHub.getGitUrl(user, repository))
         tag = now.strftime("%Y%m%d-%H%M%S")
         new_tag = repo.create_tag(tag, message='Automatic tag "{0}"'.format(tag))
         repo.remotes[originName].push(new_tag)
-        repo.git.checkout()
-        repo.git.push(self.getGitPassUrl(repository, user, password), "master:refs/heads/master")
+        feedback.pushConsoleInfo("Git: Doing checkout.")
+        #repo.git.checkout("--ours")
+        feedback.pushConsoleInfo("Git: Pushing modifications to remote repository.")
+        repo.git.push(GitHub.getGitPassUrl(user, repository, password), "master:refs/heads/master")
         os.environ['PATH'] = initialPath
         return tag
 
-    def close(self):
-        pass
 
 #Supported Operations
 class OperationType(Enum):
@@ -414,6 +511,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         with some other properties.
         """
 
+        options = OptionsCfg.read()
+
         # We add the input vector features source. It can have any kind of
         # geometry.
         self.addParameter(
@@ -423,6 +522,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                 QgsProcessing.TypeMapLayer
             )
         )
+
 
         self.addParameter(
             QgsProcessingParameterEnum(
@@ -437,7 +537,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterFolderDestination(
                 self.OUTPUT_DIRECTORY,
                 self.tr('Output directory'),
-                optional=False
+                optional=False,
+                defaultValue=options["folder"]
             )
         )
 
@@ -446,8 +547,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                 self.ZOOM_MAX,
                 self.tr('Maximum zoom [1 ~ 13]'),
                 minValue=1,
-                maxValue=12,
-                defaultValue=9
+                maxValue=13,
+                defaultValue=options["zoom_max"]
             )
         )
 
@@ -456,7 +557,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                 self.LAYER_ATTRIBUTE,
                 self.tr('Layer style name'),
                 optional=False,
-                defaultValue='1'
+                defaultValue=options['attrName']
             )
         )
 
@@ -464,7 +565,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterString(
                 self.GIT_EXECUTABLE,
                 self.tr('Executable git.exe'),
-                optional=True
+                optional=True,
+                defaultValue=options['git_exe']
             )
         )
 
@@ -472,7 +574,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterString(
                 self.GITHUB_USER,
                 self.tr('Github Username'),
-                optional=True
+                optional=True,
+                defaultValue=options['gh_user']
             )
         )
 
@@ -488,7 +591,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterString(
                 self.GITHUB_REPOSITORY,
                 self.tr('Github Repository'),
-                optional=True
+                optional=True,
+                defaultValue=options['gh_repository']
             )
         )
 
@@ -528,6 +632,9 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         layers = self.parameterAsLayerList(parameters, self.LAYERS, context)
         metatilesCount = sum([len(self.createLayerMetatiles(wgs_crs, layer, min_zoom, max_zoom)) for layer in layers])
         progress = 0
+        if gitExecutable and not GitHub.isOptionsOk(writer.folder, gitExecutable, ghUser, ghRepository, feedback):
+            feedback.setProgressText("Error : Invalid options.")
+            return False
         for layer in layers:
             feedback.setProgressText("Publishing map: " + layer.name())
             layerRenderSettings = self.createLayerRenderSettings(layer, dest_crs, outputFormat)
@@ -549,15 +656,16 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             writer.write_description(layer.name(), layerAttr, cellType, nullValue, mapOperation.getName())
             writer.write_capabilities(layer.name(), self.getMapExtent(layer, wgs_crs), layer.crs().toWkt())
             writer.writeLegendJson(layer, layerAttr, mapOperation.getName())
-            writer.writeThumbnail(self.getMapExtent(layer, dest_crs), layer.name(), layerAttr, mapOperation.getName(), layerRenderSettings, context.transformContext())
+            writer.writeThumbnail(self.getMapExtent(layer, dest_crs), layer.name(), layerAttr, mapOperation.getName(), layerRenderSettings)
         feedback.pushConsoleInfo('Finished map tile generation.')
         if gitExecutable:
-            createdTag = writer.publishTilesToGitHub(gitExecutable, ghUser, ghRepository, ghPassword)
+            createdTag = GitHub.publishTilesToGitHub(writer.folder, gitExecutable, ghUser, ghRepository, feedback, ghPassword)
+            giturl = GitHub.getGitUrl(ghUser, ghRepository)
             #FIXME Space in the map name will cause errors.
-            storeUrl = writer.getGitUrl(ghUser, ghRepository) + "@" + createdTag + "/"
+            storeUrl = giturl #+ "@" + createdTag + "/"
             feedback.pushConsoleInfo(
                 "View the results online: \nhttps://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl
-                + "/&remotemap=" + ",".join(["GH:" + layer.name().lower() + ";" + layerAttr for layer in layers]))
+                + "/&zoomlevels="+str(max_zoom)+"&remotemap=" + ",".join(["GH:" + layer.name().lower() + ";" + layerAttr for layer in layers]))
         else:
             feedback.pushConsoleInfo("View the results online: \nhttps://maps.csr.ufmg.br/calculator/?queryid=152&remotemap="
                                      + ",".join(["GH:" + layer.name().lower() + ";" + layerAttr for layer in layers]))
@@ -623,6 +731,14 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         project = context.project()
         visible_layers = [item.layer() for item in project.layerTreeRoot().findLayers() if item.isVisible()]
         self.layers = [l for l in project.layerTreeRoot().layerOrder() if l in visible_layers]
+        OptionsCfg.write(
+            self.parameterAsInt(parameters, self.ZOOM_MAX, context),
+            self.parameterAsString(parameters, self.GIT_EXECUTABLE, context),
+            self.parameterAsString(parameters, self.LAYER_ATTRIBUTE, context),
+            self.parameterAsString(parameters, self.GITHUB_USER, context),
+            self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context),
+            self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context)
+        )
         return True
 
     #Danilo

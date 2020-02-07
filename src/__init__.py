@@ -27,7 +27,6 @@ __date__ = '2019-12-09'
 __copyright__ = '(C) 2019 by Danilo/CSR UFMG'
 
 
-# noinspection PyPep8Naming
 def classFactory(iface):  # pylint: disable=invalid-name
     """Load MappiaPublisher class from file MappiaPublisher.
 
@@ -35,5 +34,5 @@ def classFactory(iface):  # pylint: disable=invalid-name
     :type iface: QgsInterface
     """
     #
-    from src.mappia_publisher import MappiaPublisherPlugin
+    from .mappia_publisher import MappiaPublisherPlugin
     return MappiaPublisherPlugin()
