@@ -39,6 +39,7 @@ import collections
 import io
 from pathlib import Path
 import pip
+import requests
 from datetime import datetime
 
 from enum import Enum
@@ -324,8 +325,13 @@ class GitHub:
     @staticmethod
     def existsRepository(user, repository, feedback):
         try:
-            result = GitHub.lsremote(GitHub.getGitUrl(user, repository))
-            return True
+            feedback.pushConsoleInfo("URL : " + GitHub.getGitUrl(user, repository))
+            resp = requests.get(GitHub.getGitUrl(user, repository))
+            if resp.status_code == 200:
+                return True
+            else:
+                return False
+            #result = GitHub.lsremote(GitHub.getGitUrl(user, repository))
         except:
             return False
 
@@ -414,34 +420,41 @@ class GitHub:
         # https://stackoverflow.com/questions/6565357/git-push-requires-username-and-password
         repo.git.config("credential.helper", "store")
         repo.git.config("--global", "credential.helper", "'cache --timeout 7200'")
-        feedback.pushConsoleInfo('Git: Fetch github.')
-        repo.git.fetch(GitHub.getGitUrl(user, repository), "master")
+        try:
+            feedback.pushConsoleInfo("Git: Pulling your repository current state.")
+            repo.git.pull("-s recursive", "-X ours", GitHub.getGitUrl(user, repository), "master")
+            feedback.pushConsoleInfo("Git: Doing checkout.")
+            repo.git.fetch(GitHub.getGitUrl(user, repository), "master")
+            feedback.pushConsoleInfo("Git: Doing checkout.")
+            repo.git.checkout("--ours")
+        except:
+            pass
+
+        originName = "mappia"
+
+        try:
+            repo.git.remote("add", originName, GitHub.getGitUrl(user, repository))
+        except:
+            repo.git.remote("set-url", originName, GitHub.getGitUrl(user, repository))
+
         feedback.pushConsoleInfo('Git: Add all generated tiles to your repository.')
         repo.git.add(all=True)  # Adiciona todos arquivos
-        #feedback.pushConsoleInfo("Git: Pulling your repository current state.")
-        #repo.git.pull("-s recursive", "-X ours", GitHub.getGitUrl(user, repository), "master")
         #feedback.pushConsoleInfo("Git: Mergin.")
         #repo.git.merge("-s recursive", "-X ours")
-        feedback.pushConsoleInfo("Git: Pushing changes.")
+        #feedback.pushConsoleInfo("Git: Pushing changes.")
         #repo.git.push(GitHub.getGitUrl(user, repository), "master:refs/heads/master")
         if repo.index.diff(None) or repo.untracked_files:
             feedback.pushConsoleInfo("No changes, nothing to commit.")
         feedback.pushConsoleInfo("Git: Committing changes.")
         repo.git.commit(m="QGIS - " + now.strftime("%d/%m/%Y %H:%M:%S"))
-        originName = "mappia"
-        try:
-            repo.git.remote("add", originName, GitHub.getGitUrl(user, repository))
-        except:
-            repo.git.remote("set-url", originName, GitHub.getGitUrl(user, repository))
-        tag = now.strftime("%Y%m%d-%H%M%S")
-        new_tag = repo.create_tag(tag, message='Automatic tag "{0}"'.format(tag))
-        repo.remotes[originName].push(new_tag)
-        feedback.pushConsoleInfo("Git: Doing checkout.")
-        #repo.git.checkout("--ours")
+        # feedback.pushConsoleInfo("CREATING TAG")
+        # tag = now.strftime("%Y%m%d-%H%M%S")
+        # new_tag = repo.create_tag(tag, message='Automatic tag "{0}"'.format(tag))
+        # repo.remotes[originName].push(new_tag)
         feedback.pushConsoleInfo("Git: Pushing modifications to remote repository.")
         repo.git.push(GitHub.getGitPassUrl(user, repository, password), "master:refs/heads/master")
         os.environ['PATH'] = initialPath
-        return tag
+        return None
 
 
 #Supported Operations
@@ -792,7 +805,6 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
     def createInstance(self):
         return MappiaPublisherAlgorithm()
-
 
 def install(package):
     if hasattr(pip, 'main'):
