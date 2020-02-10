@@ -793,15 +793,16 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     def createInstance(self):
         return MappiaPublisherAlgorithm()
 
+
 def install(package):
     if hasattr(pip, 'main'):
-        pip.main(['install', package])
+        pip.main(['install', '--user', package])
     else:
         from pip._internal import main as pip_main
         if hasattr(pip_main, 'main'):
-            pip_main.main(['install', package])
+            pip_main.main(['install', '--user', package])
         else:
-            pip_main(['install', package])
+            pip_main(['install', '--user', package])
 
 try:
     import xmltodict
