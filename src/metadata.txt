@@ -6,7 +6,7 @@
 name=Mappia Publisher
 qgisMinimumVersion=3.0
 description=Share your maps online, just create the layout in QGIS and use this plugin to easily publish it online.
-version=1.0
+version=1.1
 author=Danilo da Silveira Figueira
 email=danilo@csr.ufmg.br
 
