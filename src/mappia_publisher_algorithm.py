@@ -114,6 +114,16 @@ class Tile:
         lat2, lon2 = num2deg(self.x + 1, self.y + 1, self.z)
         return [lon1, lat2, lon2, lat1]
 
+def install(package):
+    if hasattr(pip, 'main'):
+        pip.main(['install', '--user', package])
+    else:
+        from pip._internal import main as pip_main
+        if hasattr(pip_main, 'main'):
+            pip_main.main(['install', '--user', package])
+        else:
+            pip_main(['install', '--user', package])
+
 class OptionsCfg:
 
     @staticmethod
@@ -347,7 +357,6 @@ class GitHub:
         except:
             os.environ["PATH"] = os.environ["PATH"] + os.pathsep + gitProgramFolder
 
-        install("gitpython")
         from git import Repo
         from git import InvalidGitRepositoryError
 
@@ -392,7 +401,6 @@ class GitHub:
         except:
             os.environ["PATH"] = os.environ["PATH"] + os.pathsep + gitProgramFolder
 
-        install("gitpython")
         from git import Repo
         from git import InvalidGitRepositoryError
 
@@ -760,10 +768,27 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         output_dir = self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context)
         if not output_dir:
             raise QgsProcessingException(self.tr('You need to specify output directory.'))
+
+        self.installDependencies()
         writer = DirectoryWriter(output_dir, is_tms)
         self.generate(writer, parameters, context, feedback)
         results = {'OUTPUT_DIRECTORY': output_dir}
         return results
+
+    def installDependencies(self):
+        try:
+            import xmltodict
+        except:
+            install("xmltodict")
+            import xmltodict
+
+        try:
+            from pyproj import Proj
+        except:
+            install("pyproj")
+            from pyproj import Proj
+        import re
+        install("gitpython")
 
 
     def name(self):
@@ -806,21 +831,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     def createInstance(self):
         return MappiaPublisherAlgorithm()
 
-def install(package):
-    if hasattr(pip, 'main'):
-        pip.main(['install', '--user', package])
-    else:
-        from pip._internal import main as pip_main
-        if hasattr(pip_main, 'main'):
-            pip_main.main(['install', '--user', package])
-        else:
-            pip_main(['install', '--user', package])
 
-try:
-    import xmltodict
-except:
-    install("xmltodict")
-    import xmltodict
+
 
 class WMSCapabilities:
 
@@ -962,14 +974,6 @@ class WMSCapabilities:
 
     @staticmethod
     def convertCoordinateProj(crsProj, fromX, fromY, outputProjected):
-        # dinamica.package("pyproj")
-        try:
-            from pyproj import Proj
-        except:
-            install("pyproj")
-            from pyproj import Proj
-        import re
-
         regex = r"^[ ]*PROJCS"
         isProjected = re.match(regex, crsProj)
         if (outputProjected and isProjected) or (not outputProjected and not isProjected):
