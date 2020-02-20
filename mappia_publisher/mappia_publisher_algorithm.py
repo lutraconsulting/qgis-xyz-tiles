@@ -593,7 +593,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterString(
                 self.GIT_EXECUTABLE,
                 self.tr('Executable git.exe'),
-                optional=True,
+                optional=False,
                 defaultValue=options['git_exe']
             )
         )
@@ -754,6 +754,11 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             return False, self.tr('Invalid zoom levels range.')
         if len(self.parameterAsLayerList(parameters, self.LAYERS, context)) <= 0:
             return False, self.tr("Please select one map at least.")
+        gitExe = self.parameterAsString(parameters, self.GIT_EXECUTABLE, context)
+        if not gitExe or not os.path.isfile(gitExe):
+            return False, self.tr("Select your git executable program.\nIt can be downloadable at: https://git-scm.com/downloads")
+        if not self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context):
+            return False, self.tr("Please specify your repository name.\nYou can create one at: https://github.com/new")
         return super().checkParameterValues(parameters, context)
 
     def prepareAlgorithm(self, parameters, context, feedback):

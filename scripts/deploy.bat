@@ -22,7 +22,7 @@ set QGIS_PLUGINPATH=%OSGEO4W_ROOT%\apps\qgis\qtplugins;%OSGEO4W_ROOT%\apps\qt5\p
 rem easy_install pb_tool
 
 %~d0
-cd %~dp0../src/
+cd %~dp0../mappia_publisher/
 
 call pb_tool deploy
 

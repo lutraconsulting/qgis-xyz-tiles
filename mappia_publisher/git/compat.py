@@ -55,7 +55,7 @@ def win_encode(s):
 
 
 def with_metaclass(meta, *bases):
-    """copied from https://github.com/Byron/bcore/blob/master/src/python/butility/future.py#L15"""
+    """copied from https://github.com/Byron/bcore/blob/master/mappia_publisher/python/butility/future.py#L15"""
     class metaclass(meta):
         __call__ = type.__call__
         __init__ = type.__init__
