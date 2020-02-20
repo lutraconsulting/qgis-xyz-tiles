@@ -40,12 +40,15 @@ import io
 from pathlib import Path
 import pip
 import requests
+from . import xmltodict
+import subprocess
 from datetime import datetime
 
 from enum import Enum
 from qgis.PyQt.QtCore import QCoreApplication, QSize, Qt
 from qgis.PyQt.QtGui import QImage, QColor, QPainter
 from qgis.core import (QgsProject,
+                       QgsPointXY,
                        QgsLogger,
                        QgsProcessing,
                        QgsMessageLog,
@@ -115,14 +118,15 @@ class Tile:
         return [lon1, lat2, lon2, lat1]
 
 def install(package):
-    if hasattr(pip, 'main'):
-        pip.main(['install', '--user', package])
-    else:
-        from pip._internal import main as pip_main
-        if hasattr(pip_main, 'main'):
-            pip_main.main(['install', '--user', package])
-        else:
-            pip_main(['install', '--user', package])
+    subprocess.check_call(['pip', 'install', package])
+    # if hasattr(pip, 'main'):
+    #     pip.main(['install', package])
+    # else:
+    #     from pip._internal import main as pip_main
+    #     if hasattr(pip_main, 'main'):
+    #         pip_main.main(['install', package])
+    #     else:
+    #         pip_main(['install', package])
 
 class OptionsCfg:
 
@@ -212,8 +216,8 @@ class DirectoryWriter:
         image.save(path, self.format, self.quality)
         return path
 
-    def write_capabilities(self, layerTitle, extents, projection):
-        WMSCapabilities.updateXML(self.folder, layerTitle, extents, projection)
+    def write_capabilities(self, layer, layerTitle):#, extents, projection):
+        WMSCapabilities.updateXML(self.folder, layer, layerTitle)#, extents, projection)
 
     def write_description(self, layerTitle, layerAttr, cellTypeName, nullValue, operation):
         directory = os.path.join(self.folder, layerTitle.lower(), layerAttr.lower())
@@ -335,7 +339,7 @@ class GitHub:
     @staticmethod
     def existsRepository(user, repository, feedback):
         try:
-            feedback.pushConsoleInfo("URL : " + GitHub.getGitUrl(user, repository))
+            feedback.pushConsoleInfo("URL: " + GitHub.getGitUrl(user, repository))
             resp = requests.get(GitHub.getGitUrl(user, repository))
             if resp.status_code == 200:
                 return True
@@ -357,6 +361,8 @@ class GitHub:
         except:
             os.environ["PATH"] = os.environ["PATH"] + os.pathsep + gitProgramFolder
 
+
+        #install("GitPython")
         from git import Repo
         from git import InvalidGitRepositoryError
 
@@ -401,6 +407,7 @@ class GitHub:
         except:
             os.environ["PATH"] = os.environ["PATH"] + os.pathsep + gitProgramFolder
 
+        #install("GitPython")
         from git import Repo
         from git import InvalidGitRepositoryError
 
@@ -545,14 +552,14 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         )
 
 
-        self.addParameter(
-            QgsProcessingParameterEnum(
-                self.OPERATION,
-                self.tr('Operation Type'),
-                options=[self.tr(curOption) for curOption in OperationType.getOptions()],
-                defaultValue=9
-            )
-        )
+        #self.addParameter(
+        #    QgsProcessingParameterEnum(
+        #        self.OPERATION,
+        #        self.tr('Operation Type'),
+        #        options=[self.tr(curOption) for curOption in OperationType.getOptions()],
+        #        defaultValue=9
+        #    )
+        #)
 
         self.addParameter(
             QgsProcessingParameterFolderDestination(
@@ -628,7 +635,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         return metatiles_by_zoom
 
     #Return the map extents in the given projection
-    def getMapExtent(self, layer, projection):
+    @staticmethod
+    def getMapExtent(layer, projection):
         mapExtent = layer.extent()
         src_to_proj = QgsCoordinateTransform(layer.crs(), projection, layer.transformContext())
         return src_to_proj.transformBoundingBox(mapExtent)
@@ -646,7 +654,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         ghRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
         ghPassword = self.parameterAsString(parameters, self.GITHUB_PASS, context)
         gitExecutable = self.parameterAsString(parameters, self.GIT_EXECUTABLE, context)
-        mapOperation = OperationType(self.parameterAsEnum(parameters, self.OPERATION, context))
+        mapOperation = OperationType.RGBA #OperationType(self.parameterAsEnum(parameters, self.OPERATION, context))
         feedback.setProgressText("Operation: " + str(mapOperation))
         wgs_crs = QgsCoordinateReferenceSystem('EPSG:4326')
         dest_crs = QgsCoordinateReferenceSystem('EPSG:3857')
@@ -654,7 +662,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         metatilesCount = sum([len(self.createLayerMetatiles(wgs_crs, layer, min_zoom, max_zoom)) for layer in layers])
         progress = 0
         if gitExecutable and not GitHub.isOptionsOk(writer.folder, gitExecutable, ghUser, ghRepository, feedback):
-            feedback.setProgressText("Error : Invalid options.")
+            feedback.setProgressText("Error : Please select a valid 'git.exe'")
             return False
         for layer in layers:
             feedback.setProgressText("Publishing map: " + layer.name())
@@ -675,7 +683,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                     feedback.setProgress(100 * (progress / metatilesCount))
             writer.writeLegendPng(layer, layer.name(), layerAttr, mapOperation.getName())
             writer.write_description(layer.name(), layerAttr, cellType, nullValue, mapOperation.getName())
-            writer.write_capabilities(layer.name(), self.getMapExtent(layer, wgs_crs), layer.crs().toWkt())
+            writer.write_capabilities(layer, layer.name())
             writer.writeLegendJson(layer, layerAttr, mapOperation.getName())
             writer.writeThumbnail(self.getMapExtent(layer, dest_crs), layer.name(), layerAttr, mapOperation.getName(), layerRenderSettings)
         feedback.pushConsoleInfo('Finished map tile generation.')
@@ -762,34 +770,15 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         )
         return True
 
-    #Danilo
     def processAlgorithm(self, parameters, context, feedback):
         is_tms = False
         output_dir = self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context)
         if not output_dir:
             raise QgsProcessingException(self.tr('You need to specify output directory.'))
-
-        self.installDependencies()
         writer = DirectoryWriter(output_dir, is_tms)
         self.generate(writer, parameters, context, feedback)
         results = {'OUTPUT_DIRECTORY': output_dir}
         return results
-
-    def installDependencies(self):
-        try:
-            import xmltodict
-        except:
-            install("xmltodict")
-            import xmltodict
-
-        try:
-            from pyproj import Proj
-        except:
-            install("pyproj")
-            from pyproj import Proj
-        import re
-        install("gitpython")
-
 
     def name(self):
         """
@@ -974,13 +963,19 @@ class WMSCapabilities:
 
     @staticmethod
     def convertCoordinateProj(crsProj, fromX, fromY, outputProjected):
+
         regex = r"^[ ]*PROJCS"
         isProjected = re.match(regex, crsProj)
-        if (outputProjected and isProjected) or (not outputProjected and not isProjected):
+
+        if (isProjected and outputProjected) or ( not isProjected and  not outputProjected):
             return (fromX, fromY)
         else:
-            x, y = Proj(crsProj)(fromX, fromY, inverse= not outputProjected)
-            return (x, y)
+            fProj = QgsCoordinateReferenceSystem()
+            fProj.createFromWkt(crsProj)
+            tProj = QgsCoordinateReferenceSystem()
+            tProj.createFromProj4("+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext  +no_defs" if outputProjected else "+proj=longlat +datum=WGS84 +no_defs ")
+            newCoord = QgsCoordinateTransform(fProj, tProj, QgsProject.instance()).transform(QgsPointXY(fromX, fromY), True)
+        return (newCoord.x, newCoord.y)
 
     @staticmethod
     def getMapDescription(fileNameId, latMinX, latMinY, latMaxX, latMaxY, projMinX, projMinY, projMaxX, projMaxY):
@@ -1041,7 +1036,9 @@ class WMSCapabilities:
         # <BoundingBox SRS="EPSG:900913" minx=\"""" + str(projMinX) + """\" miny=\"""" + str(projMinY) + """\" maxx=\"""" + str(projMaxX) + """\" maxy=\"""" + str(projMaxY) + """\"/>
 
     @staticmethod
-    def updateXML(directory, layerTitle, extents, projection):
+    def updateXML(directory, layer, layerTitle):
+
+        extents = layer.extent()
 
         xmlContent = ""
         capabilitiesPath = os.path.join(directory, "getCapabilities.xml")
@@ -1051,13 +1048,19 @@ class WMSCapabilities:
             capabilitiesContent = WMSCapabilities.getDefaultCapabilities()
         doc = xmltodict.parse(capabilitiesContent)
 
-        filename = layerTitle #Danilo é layer Name no qgis
+        filename = layerTitle #layer Name no qgis
 
         #extents, projection
-        latMaxX, latMaxY = WMSCapabilities.convertCoordinateProj(projection, extents.xMaximum(), extents.yMaximum(), outputProjected=True)
-        latMinX, latMinY = WMSCapabilities.convertCoordinateProj(projection, extents.xMinimum(), extents.yMinimum(), outputProjected=True)
-        projMaxX, projMaxY = WMSCapabilities.convertCoordinateProj(projection, extents.xMaximum(), extents.yMaximum(), outputProjected=False)
-        projMinX, projMinY = WMSCapabilities.convertCoordinateProj(projection, extents.xMaximum(), extents.yMaximum(), outputProjected=False)
+        projMaxX = layer.extent().xMaximum()
+        projMinX = layer.extent().xMinimum()
+        projMaxY = layer.extent().yMaximum()
+        projMinY = layer.extent().yMinimum()
+        llExtent = MappiaPublisherAlgorithm.getMapExtent(layer, QgsCoordinateReferenceSystem('EPSG:4326'))
+        latMaxX = llExtent.xMaximum()
+        latMinX = llExtent.xMinimum()
+        latMaxY = llExtent.yMaximum()
+        latMinY = llExtent.yMinimum()
+
 
         if 'Layer' in doc['WMT_MS_Capabilities']['Capability']['Layer']:
             if type(doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer']) is collections.OrderedDict:
