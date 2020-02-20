@@ -31,7 +31,7 @@ __copyright__ = '(C) 2020 by Danilo da Silveira Figueira / CSR UFMG'
 __revision__ = '$Format:%H$'
 
 from qgis.core import QgsProcessingProvider
-from .mappia_publisher_algorithm import MappiaPublisherAlgorithm
+from mappia_publisher.mappia_publisher_algorithm import MappiaPublisherAlgorithm
 
 
 class MappiaPublisherProvider(QgsProcessingProvider):

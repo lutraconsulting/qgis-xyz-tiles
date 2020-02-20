@@ -34,8 +34,8 @@ import os
 import sys
 import inspect
 
-from qgis.core import QgsProcessingAlgorithm, QgsApplication
-from .mappia_publisher_provider import MappiaPublisherProvider
+from qgis.core import QgsApplication
+from mappia_publisher.mappia_publisher_provider import MappiaPublisherProvider
 
 cmd_folder = os.path.split(inspect.getfile(inspect.currentframe()))[0]
 

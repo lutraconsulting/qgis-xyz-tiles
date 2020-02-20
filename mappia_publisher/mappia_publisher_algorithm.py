@@ -619,7 +619,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterString(
                 self.GITHUB_REPOSITORY,
                 self.tr('Github Repository'),
-                optional=True,
+                optional=False,
                 defaultValue=options['gh_repository']
             )
         )
@@ -638,7 +638,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     @staticmethod
     def getMapExtent(layer, projection):
         mapExtent = layer.extent()
-        src_to_proj = QgsCoordinateTransform(layer.crs(), projection, layer.transformContext())
+        src_to_proj = QgsCoordinateTransform(layer.crs(), projection, QgsProject.instance().transformContext() if getattr(layer, "transformContext", None) is None else layer.transformContext())
         return src_to_proj.transformBoundingBox(mapExtent)
 
     def generate(self, writer, parameters, context, feedback):
@@ -725,9 +725,9 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         settings.setFlag(QgsMapSettings.Flag.UseAdvancedEffects, on=False)
         settings.setOutputImageFormat(outputFormat)
         settings.setDestinationCrs(dest_crs)
-        simplifyMethod = QgsVectorSimplifyMethod()
-        simplifyMethod.setSimplifyHints(QgsVectorSimplifyMethod.SimplifyHint.NoSimplification)
-        settings.setSimplifyMethod(simplifyMethod)
+        # simplifyMethod = QgsVectorSimplifyMethod()
+        # simplifyMethod.setSimplifyHints(QgsVectorSimplifyMethod.SimplifyHint.NoSimplification)
+        # settings.setSimplifyMethod(simplifyMethod)
         settings.setLayers([layer])
         dpi = 256
         settings.setOutputDpi(dpi)
@@ -754,9 +754,12 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             return False, self.tr('Invalid zoom levels range.')
         if len(self.parameterAsLayerList(parameters, self.LAYERS, context)) <= 0:
             return False, self.tr("Please select one map at least.")
+        curUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
+        if curUser and '@' in curUser:
+            return False, self.tr("Please use your username instead of the email address.")
         gitExe = self.parameterAsString(parameters, self.GIT_EXECUTABLE, context)
-        if not gitExe or not os.path.isfile(gitExe):
-            return False, self.tr("Select your git executable program.\nIt can be downloadable at: https://git-scm.com/downloads")
+        # if not gitExe or not os.path.isfile(gitExe):
+        #     return False, self.tr("Select your git executable program.\nIt can be downloadable at: https://git-scm.com/downloads")
         if not self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context):
             return False, self.tr("Please specify your repository name.\nYou can create one at: https://github.com/new")
         return super().checkParameterValues(parameters, context)
@@ -776,6 +779,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         return True
 
     def processAlgorithm(self, parameters, context, feedback):
+        feedback.pushConsoleInfo(self.parameterAsString(parameters, self.GIT_EXECUTABLE, context))
+        feedback.setProgressText(self.parameterAsString(parameters, self.GIT_EXECUTABLE, context))
         is_tms = False
         output_dir = self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context)
         if not output_dir:
