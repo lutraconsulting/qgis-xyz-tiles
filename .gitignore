@@ -2,4 +2,5 @@
 .idea/
 *.pyc
 .*options.json
+.*options2.json
 __pycache__/
