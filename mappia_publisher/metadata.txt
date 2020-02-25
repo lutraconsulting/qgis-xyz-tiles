@@ -4,8 +4,8 @@
 
 [general]
 name=Mappia Publisher
-qgisMinimumVersion=3.0
-description=Share all your maps online, for free. Used in many projects, it allows you to host and share your maps online. You can create your QGIS Layout and use this plugin to easily publish it online.
+qgisMinimumVersion=3.4
+description=Share all your maps online, for free. Used in many projects, it allows you to host and share your maps online. You can create your QGIS Layout and use this plugin to easily publish it online. Visit the full documentation and working examples at: (http://mappia.earth).
 version=1.4
 author=Danilo da Silveira Figueira
 email=danilo@csr.ufmg.br
