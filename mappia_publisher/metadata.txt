@@ -5,13 +5,18 @@
 [general]
 name=Mappia Publisher
 qgisMinimumVersion=3.4
-description=Share all your maps online, for free. Used in many projects, it allows you to host and share your maps online. You can create your QGIS Layout and use this plugin to easily publish it online. Visit the full documentation and working examples at: (http://mappia.earth).
+description=Share all your maps online, for free. Used in many projects, create a Layout in QGIS and easily publish it online.
 version=1.4
 author=Danilo da Silveira Figueira
 email=danilo@csr.ufmg.br
 
-about=It is part of my 4 years research. The laboratory CSR-UFMG use the mappia in many projects (csr.ufmg.br/csr/projeto/), the most recents are: project for the world bank about amazon evaluation (csr.ufmg.br/amazones), and the fire risk areas identification in Brazilian cerrado (csr.ufmg.br/fipcerrado). Use the map layout created in QGIS and share it online with everybody. You just need to create a free GITHUB account. Mappia is an online mapping platform accessible for everyone. Easy and free. Make your QGIS projects accessible to everybody. It automatically configure your map to show online. You can customize the generated maps online interactions into an user friendly interface, instructions on (mappia.earth). The service allows to use how many maps you want, it doesn't require any server. The geographic data is stored in your Github Account and you have the total control of it. Combine maps from multiple users sources and create an interactive platform online. For creating enhanced map interactions check our API at: http://mappia.earth/.
+about=It is part of my 4 years research. The laboratory CSR-UFMG use the mappia in many projects (csr.ufmg.br/csr/projeto/), the most recents are: a project with the World Bank about amazon worth evaluation (csr.ufmg.br/amazones), and fire risk areas identification in real time in Brazilian cerrado (csr.ufmg.br/fipcerrado).
 
+    Mappia is an online mapping platform accessible for everyone. Easy and free to automatically share your maps online. It automatically create a layout for your online maps. You can customize the layout on an user friendly interface, examples and documentation.
+
+    We developed an enhanced map protocol, to serve the maps over any File Storage service. This service does not require any private server. Just create a FREE GitHub account and start sharing your maps online today.
+
+    For the complete menu of options and examples, please access: http://mappia.earth/.
 tracker=https://github.com/MappiaEarth/mappia_publisher/issues
 repository=https://github.com/MappiaEarth/mappia_publisher
 # End of mandatory metadata

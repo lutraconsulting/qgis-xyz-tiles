@@ -33,18 +33,27 @@ __revision__ = '$Format:%H$'
 import math
 import os
 import re
+#import glob
 import csv
 import json
 import collections
 import io
+import random
 from pathlib import Path
+import platform
 import requests
+import webbrowser
+from time import sleep
+from http import HTTPStatus
+import tempfile
+import subprocess
 from . import xmltodict
 import unicodedata
 from datetime import datetime
 from xml.sax.saxutils import escape
 from enum import Enum
-from qgis.PyQt.QtCore import QCoreApplication, QSize, Qt
+from qgis.PyQt.QtCore import QCoreApplication, QSize, Qt, QVariant
+from qgis.PyQt.QtWidgets import QMessageBox
 from qgis.PyQt.QtGui import QImage, QColor, QPainter
 from qgis.core import (QgsProject,
                        QgsPointXY,
@@ -72,7 +81,6 @@ from qgis.core import (QgsProject,
                        QgsVectorSimplifyMethod,
                        QgsProcessingParameterFeatureSource,
                        QgsProcessingParameterFeatureSink)
-
 
 # TMS functions taken from https://alastaira.wordpress.com/2011/07/06/converting-tms-tile-coordinates-to-googlebingosm-tile-coordinates/ #spellok
 def tms(ytile, zoom):
@@ -138,7 +146,7 @@ class Tile:
 class OptionsCfg:
 
     @staticmethod
-    def createCfg(zoom_max=None, gitExe=None, attrName=None, ghUser=None, ghRepository=None, folder=None, savePass=None, ghPass=None):
+    def createCfg(zoom_max=None, gitExe=None, attrName=None, ghUser=None, ghRepository=None, folder=None, ghPass=None):
         defaults = dict()
         defaults["zoom_max"] = zoom_max if zoom_max is not None else 9
         defaults["git_exe"] = gitExe if gitExe is not None else ''
@@ -146,14 +154,13 @@ class OptionsCfg:
         defaults["gh_user"] = ghUser if ghUser is not None else ''
         defaults["gh_repository"] = ghRepository if ghRepository is not None else ''
         defaults["folder"] = folder if folder is not None else ''
-        defaults["save_pass"] = savePass if savePass is not None else False
         defaults["gh_pass"] = ghPass if ghPass is not None else ''
         return defaults
 
     @staticmethod
-    def write(zoom_max, gitExe, attrName, ghUser, ghRepository, folder, savePass, ghPass):
+    def write(zoom_max, gitExe, attrName, ghUser, ghRepository, folder, ghPass):
         with open(resolve("options.json"), 'w', encoding="utf-8") as f:
-            json.dump(OptionsCfg.createCfg(zoom_max, gitExe, attrName, ghUser, ghRepository, folder, savePass, ghPass), f)
+            json.dump(OptionsCfg.createCfg(zoom_max, gitExe, attrName, ghUser, ghRepository, folder, ghPass), f)
 
     @staticmethod
     def read():
@@ -336,6 +343,10 @@ class DirectoryWriter:
 
 class GitHub:
     @staticmethod
+    def testLogin(user, token):
+        return requests.get(url='https://api.github.com/user', auth=(user, token)).status_code == 200
+
+    @staticmethod
     def prepareEnvironment(gitExecutable):
         if not gitExecutable:
             return
@@ -383,9 +394,9 @@ class GitHub:
         return remote_refs
 
     @staticmethod
-    def existsRepository(user, repository, feedback):
+    def existsRepository(user, repository):
         try:
-            feedback.pushConsoleInfo("URL: " + GitHub.getGitUrl(user, repository))
+            #feedback.pushConsoleInfo("URL: " + GitHub.getGitUrl(user, repository))
             resp = requests.get(GitHub.getGitUrl(user, repository))
             if resp.status_code == 200:
                 return True
@@ -401,9 +412,9 @@ class GitHub:
         from git import InvalidGitRepositoryError
 
         #feedback.pushConsoleInfo('Github found commiting to your account.')
-        if not GitHub.existsRepository(user, repository, feedback):
-            feedback.pushConsoleInfo("The repository " + repository + " doesn't exists.\nPlease create a new one at https://github.com/new .")
-            return False
+        # if not GitHub.existsRepository(user, repository):
+        #     feedback.pushConsoleInfo("The repository " + repository + " doesn't exists.\nPlease create a new one at https://github.com/new .")
+        #     return False
 
         #Cria ou pega o repositório atual.
         repo = None
@@ -437,7 +448,7 @@ class GitHub:
 
         #Não está funcionando a validação
         feedback.pushConsoleInfo(user + ' at ' + repository)
-        if not GitHub.existsRepository(user, repository, feedback):
+        if not GitHub.existsRepository(user, repository):
             feedback.pushConsoleInfo("The repository " + repository + " doesn't exists.\nPlease create a new one at https://github.com/new .")
             return None
 
@@ -546,6 +557,36 @@ class UTILS:
                       if unicodedata.category(c) != 'Mn')
 
 
+def install_git():
+    def userConfirmed():
+        return QMessageBox.Yes == QMessageBox.question(None, "Git not automatically identified.",
+                             "Click 'Yes' to automatically download extract and use the git executable, otherwise please find the executable manually.",
+                             defaultButton=QMessageBox.Yes,
+                             buttons=(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel))
+
+    if (("Windows" in platform.system() or "CYGWIN_NT" in platform.system()) and userConfirmed()) == False:
+        return ''
+    def download_file(url, toDir):
+        local_filename = os.path.join(toDir, url.split('/')[-1])
+        # NOTE the stream=True parameter below
+        with requests.get(url, stream=True) as r:
+            r.raise_for_status()
+            with open(local_filename, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    if chunk:  # filter out keep-alive new chunks
+                        f.write(chunk)
+                        # f.flush()
+        return local_filename
+
+    tmpDir = tempfile.mkdtemp()
+    #with tempfile.TemporaryDirectory() as tmpDir:
+    gitUrl = "https://github.com/git-for-windows/git/releases/download/v2.25.1.windows.1/PortableGit-2.25.1-64-bit.7z.exe"
+    selfExtractor = download_file(gitUrl, tmpDir)
+    portableGit = os.path.join(tmpDir, "portablegit")
+    subprocess.check_output([selfExtractor, '-o', portableGit, "-y"])
+    return os.path.join(portableGit, 'mingw64', 'bin', 'git.exe')
+
+
 class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     """
     This is an example algorithm that takes a vector layer and
@@ -583,6 +624,9 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     WIDTH = 256
     HEIGHT = 256
 
+    personal_token = ''
+    found_git = ''
+
     def initAlgorithm(self, config):
 
         #super(MappiaPublisherAlgorithm, self).initAlgorithm()
@@ -598,11 +642,10 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterMultipleLayers(
                 self.LAYERS,
-                self.tr('\nMaps to publish - Select the maps to share and view online.\n\n    PS: The accents will be removed.\n    PS2: Spaces and special characters will be replaced by \'_\''),
+                self.tr('Select the maps you want to display online'),
                 QgsProcessing.TypeMapLayer
             )
         )
-
 
         #self.addParameter(
         #    QgsProcessingParameterEnum(
@@ -613,24 +656,6 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         #    )
         #)
 
-        self.addParameter(
-            QgsProcessingParameterFolderDestination(
-                self.OUTPUT_DIRECTORY,
-                self.tr('\nOutput directory - Select a directory to save the generated map schema.\n\n    Please select an empty directory or an already used or a QGIS temporary directory.'),
-                optional=False,
-                defaultValue=options["folder"]
-            )
-        )
-
-        self.addParameter(
-            QgsProcessingParameterNumber(
-                self.ZOOM_MAX,
-                self.tr('\nMaximum zoom [1 ~ 13] (The maximum zoom level to your maps witch will be visible online.)\n\n    Higher values means more zoom levels but also increased publishing time.\n    PS: For each increase of one in max zoom value almost double the publishing time.\n    PS2: Indicated zoom levels for each type of geographic data https://wiki.openstreetmap.org/wiki/Zoom_levels'),
-                minValue=1,
-                maxValue=13,
-                defaultValue=options["zoom_max"]
-            )
-        )
 
         #TODO Implement layer attribute later.
         # self.addParameter(
@@ -644,17 +669,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
         self.addParameter(
             QgsProcessingParameterString(
-                self.GIT_EXECUTABLE,
-                self.tr('\nExecutable git - Put the git executable here. (If it is not installed, please follow the steps):\n\n    Download GIT at: https://git-scm.com/downloads .\n    Close and reopen QGIS after install GIT.'),
-                optional=False,
-                defaultValue=self.getGitDefault(options)
-            )
-        )
-
-        self.addParameter(
-            QgsProcessingParameterString(
                 self.GITHUB_USER,
-                self.tr('\nGithub USERNAME - Your github account username. (Please create an account at https://github.com)'),
+                self.tr('Github USERNAME (Please create a free account at https://github.com)'),
                 optional=False,
                 defaultValue=options['gh_user']
             )
@@ -663,30 +679,48 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterString(
                 self.GITHUB_PASS,
-                self.tr('\nGithub AUTHENTHICATION - (Please pick one of the 3 available methods \'Access Token|Password|Empty\'):\n\n 1) "Access Token" - (prefered) - Paste the account token. (To create a token please follow these steps):\n      1.1) Visit the link https://github.com/settings/tokens\n      1.2) On site click on the "Generate new token" button.\n      1.3) Select the option "scope \'repo\'" to enable publication.\n      1.4) Click on "Generate Token".\n      1.5) Copy the token from site.\n 2) "Password" (deprecated) - Enter your Github account password.\n 3) "Empty" (advanced) - Leave it empty. (If your git is already configured with a default key)'),
-                optional=True,
+                self.tr('Github PASSWORD or access key. - (We only use your password to generate a more secure key. At the next time that you open this plugin this field will show the generated key)'),
+                optional=False,
                 defaultValue=options['gh_pass']
-            )
-        )
-
-        self.addParameter(
-            QgsProcessingParameterBoolean(
-                self.SAVE_PASSWORD,
-                self.tr('Check to remember the authentication. (Stored in plain text)'),
-                optional=True,
-                defaultValue=options['save_pass']
             )
         )
 
         self.addParameter(
             QgsProcessingParameterString(
                 self.GITHUB_REPOSITORY,
-                self.tr('\nGithub REPOSITORY - The repository name.\n\n    Visit https://github.com/new to create a new repository.\n    Paste the repository name here.'),
+                self.tr('The name of the "remote folder" (or repository in GIT) where to store your maps.'),
                 optional=False,
                 defaultValue=options['gh_repository']
             )
         )
 
+        self.addParameter(
+            QgsProcessingParameterNumber(
+                self.ZOOM_MAX,
+                self.tr('Maximum zoom [1 ~ 13] (The maximum zoom level to the online shared maps.)'),
+                minValue=1,
+                maxValue=13,
+                defaultValue=options["zoom_max"]
+            )
+        )
+
+        self.addParameter(
+            QgsProcessingParameterString(
+                self.GIT_EXECUTABLE,
+                self.tr('Git client executable path.'),
+                optional=True,
+                defaultValue=self.getGitDefault(options)
+            )
+        )
+
+        self.addParameter(
+            QgsProcessingParameterFolderDestination(
+                self.OUTPUT_DIRECTORY,
+                self.tr('Directory to generate the data locally. (Can leave it empty to automatically use a temporary folder)'),
+                optional=True,
+                defaultValue=options["folder"]
+            )
+        )
 
     def getGitDefault(self, options):
         if options['git_exe'] and os.path.exists(options['git_exe']):
@@ -713,6 +747,15 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         src_to_proj = QgsCoordinateTransform(layer.crs(), projection, QgsProject.instance().transformContext() if getattr(layer, "transformContext", None) is None else layer.transformContext())
         return src_to_proj.transformBoundingBox(mapExtent)
 
+    def getTotalTiles(self, wgs_crs, min_zoom, max_zoom, layers):
+        total = 0
+        for layer in layers:
+            metatiles_by_zoom = self.createLayerMetatiles(wgs_crs, layer, min_zoom, max_zoom)
+            for zoom in range(min_zoom, max_zoom + 1):
+                total = total + len(metatiles_by_zoom[zoom])
+        return total
+        #sum([len(self.createLayerMetatiles(wgs_crs, layer, min_zoom, max_zoom)) for layer in layers])
+
     def generate(self, writer, parameters, context, feedback):
         feedback.setProgress(1)
         min_zoom = 0
@@ -724,15 +767,15 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         #ghKey = self.parameterAsString(parameters, self.GITHUB_KEY, context)
         ghUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
         ghRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
-        ghPassword = self.parameterAsString(parameters, self.GITHUB_PASS, context)
+        ghPassword = self.getAccessToken(parameters, context)
         mapOperation = OperationType.RGBA #OperationType(self.parameterAsEnum(parameters, self.OPERATION, context))
         feedback.setProgressText("Operation: " + str(mapOperation))
         wgs_crs = QgsCoordinateReferenceSystem('EPSG:4326')
         dest_crs = QgsCoordinateReferenceSystem('EPSG:3857')
         layers = self.parameterAsLayerList(parameters, self.LAYERS, context)
-        metatilesCount = sum([len(self.createLayerMetatiles(wgs_crs, layer, min_zoom, max_zoom)) for layer in layers])
+        metatilesCount = self.getTotalTiles(wgs_crs, min_zoom, max_zoom, layers)
         progress = 0
-        if self.parameterAsString(parameters, self.GIT_EXECUTABLE, context) and not GitHub.isOptionsOk(writer.folder, ghUser, ghRepository, feedback):
+        if self.getGitExe(parameters, context) and not GitHub.isOptionsOk(writer.folder, ghUser, ghRepository, feedback):
             feedback.setProgressText("Error : Invalid repository selected")
             return False
         for layer in layers:
@@ -751,31 +794,33 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                     for r, c, tile in metatile.tiles:
                         tile_img = mapRendered.copy(self.WIDTH * r, self.HEIGHT * c, self.WIDTH, self.HEIGHT)
                         writer.write_tile(tile, tile_img, mapOperation.getName(), layerTitle, layerAttr)
-                    progress += 1
-                    feedback.setProgress(100 * (progress / metatilesCount))
+                    progress = progress + 1
+                    feedback.setProgress(98 * (progress / metatilesCount))
             writer.writeLegendPng(layer, layerTitle, layerAttr, mapOperation.getName())
             writer.write_description(layerTitle, layerAttr, cellType, nullValue, mapOperation.getName())
             writer.write_capabilities(layer, layerTitle, layerAttr)
             writer.writeLegendJson(layer, layerTitle, layerAttr, mapOperation.getName())
             writer.writeThumbnail(self.getMapExtent(layer, dest_crs), layerTitle, layerAttr, mapOperation.getName(), layerRenderSettings)
         feedback.pushConsoleInfo('Finished map tile generation.')
-        if GitHub.getGitExe():
-            createdTag = GitHub.publishTilesToGitHub(writer.folder, ghUser, ghRepository, feedback, ghPassword)
-            giturl = GitHub.getGitUrl(ghUser, ghRepository)
-            #FIXME Space in the map name will cause errors.
-            storeUrl = giturl #+ "@" + createdTag + "/"
-            feedback.pushConsoleInfo("All the maps in this repository:\n(Please only use maps with the same zoom level.)\n")
-            feedback.pushConsoleInfo("https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl
-                + "/&zoomlevels="+str(max_zoom)
-                + "&remotemap=" + WMSCapabilities.getAllLayers(writer.folder, layerAttr) + "\n")
-            feedback.setProgressText("Current published Maps:\n")
-            feedback.pushConsoleInfo("https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl
-                + "/&zoomlevels=" + str(max_zoom) + "&remotemap=" + ",".join(
-                    ["GH:" + UTILS.normalizeName(layer.name()) + ";" + layerAttr for layer in layers]))
-            feedback.pushConsoleInfo("Copy the link above in any browser to see your maps online.")
-        # else:
-        #     feedback.pushConsoleInfo("View the results online: \nhttps://maps.csr.ufmg.br/calculator/?queryid=152&remotemap="
-        #                              + ",".join(["GH:" + layer.name().lower() + ";" + layerAttr for layer in layers]))
+        createdTag = GitHub.publishTilesToGitHub(writer.folder, ghUser, ghRepository, feedback, ghPassword)
+        giturl = GitHub.getGitUrl(ghUser, ghRepository)
+        #FIXME Space in the map name will cause errors.
+        storeUrl = giturl #+ "@" + createdTag + "/"
+        feedback.pushConsoleInfo("All the maps in this repository:\n(Please only use maps with the same zoom level.)\n")
+        feedback.pushConsoleInfo("https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl
+            + "/&zoomlevels="+str(max_zoom)
+            + "&remotemap=" + WMSCapabilities.getAllLayers(writer.folder, layerAttr) + "\n")
+        feedback.pushConsoleInfo("Current published Maps:\n")
+        curMapsUrl = "https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl \
+                     + "/&zoomlevels=" + str(max_zoom) + "&remotemap=" + ",".join(
+                ["GH:" + UTILS.normalizeName(layer.name()) + ";" + layerAttr for layer in layers])
+        feedback.setProgressText("Copy the link above in any browser to see your maps online.")
+        feedback.setProgressText(curMapsUrl)
+        feedback.setProgress(100)
+        if QMessageBox.question(None, "Published the selected maps",
+                             "Congratulations your maps are now available online.\nThe shareable link was generated, should open it in your browser?",
+                             defaultButton=QMessageBox.Yes) == QMessageBox.Yes:
+            webbrowser.open_new(curMapsUrl)
         writer.close()
 
     #Return the rendered map (QImage) for the metatile zoom level.
@@ -825,6 +870,81 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             pass #Is not a raster
         return settings
 
+    def getGitExe(self, parameters, context):
+        gitExe = self.parameterAsString(parameters, self.GIT_EXECUTABLE, context)
+        if (not gitExe or not os.path.isfile(gitExe)) and (not 'GIT_PYTHON_GIT_EXECUTABLE' in os.environ or not os.path.isfile(os.environ['GIT_PYTHON_GIT_EXECUTABLE'])) and (not self.found_git or os.path.isfile(self.found_git)):
+            gitExe = install_git()
+            parameters[self.GIT_EXECUTABLE] = gitExe
+        return gitExe
+
+    def createRepo(self, parameters, context):
+        payload = {
+            'name': self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context),
+            'description': 'Repository cointaining maps of the mappia publisher.',
+            'auto_init': 'true'
+        }
+        token = self.getAccessToken(parameters, context)
+        curUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
+        resp = requests.post('https://api.github.com/user/repos', auth=(curUser, token), data=json.dumps(payload))
+        if resp.status_code == 201:
+            sleep(1)
+            return True
+        else:
+            return False
+
+    def getAccessToken(self, parameters, context):
+        def isNotToken(content):
+            return not re.match(r'^[a-z0-9]{40}$', content)
+
+        def createTokenFromPass(user, password):
+            params = {
+                "scopes": ["repo", "write:org"],
+                "note": "Mappia Access (" + str(random.uniform(0, 1) * 100000) + ")"
+            }
+            resp = requests.post(url='https://api.github.com/authorizations', headers={'content-type': 'application/json'}, auth=(user, password), data=json.dumps(params))
+            if resp.status_code == HTTPStatus.CREATED:
+                return json.loads(resp.text)["token"]
+            elif resp.status_code == HTTPStatus.UNPROCESSABLE_ENTITY:
+                #deveria tentar mais uma vez
+                return None
+            elif resp.status_code == HTTPStatus.UNAUTHORIZED:
+                QMessageBox.warning(None, "Mappia Publisher Error", "Failed to login, please check if the entered username/password is valid at (https://github.com/login)")
+                raise Exception("Error: Failed to login, please Verify the entered username/password.")
+            else:
+                QMessageBox.warning(None, "Mappia Publisher Error", "Failed to create a new token. Response code: " + str(resp.status_code) + " Content: " + str(resp.text))
+                raise Exception("Error: Failed to create token. Response code: " + str(resp.status_code) + " Content: " + str(resp.text))
+
+        curPass = self.parameterAsString(parameters, self.GITHUB_PASS, context)
+        curUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
+
+        foundToken = None
+        if not GitHub.testLogin(curUser, curPass):
+            QMessageBox.warning(None, "Mappia Publisher Error",
+                                "Failed to login, please check if the entered username/password is valid at (https://github.com/login)")
+            Exception("Error: Failed to login.")
+            foundToken = None
+        elif not isNotToken(curPass) and GitHub.testLogin(curUser, curPass):
+            foundToken = curPass
+        elif self.personal_token and not isNotToken(self.personal_token) and GitHub.testLogin(curUser, self.personal_token):
+            foundToken = self.personal_token
+        elif QMessageBox.question(None, "Key required instead of password.", "Want the mappia to automatically create a key for you? Otherwise please access the link: https://github.com/settings/tokens to create the key.", defaultButton=QMessageBox.Yes) == QMessageBox.Yes:
+            retries = 1
+            token = None
+            while token is None and retries <= 5:
+                token = createTokenFromPass(curUser, curPass)
+                retries = retries + 1
+            if token is None:
+                if QMessageBox.question(None, "The token creation have failed. Want to open the creation link?", defaultButton=QMessageBox.Yes) == QMessageBox.Yes:
+                    webbrowser.open_new('https://github.com/settings/tokens')
+                raise Exception("Error: Something goes wrong creating the token. Opening the browser, please create your token manually at https://github.com/settings/tokens and enable enable the scope group 'repo'. Please copy the resulting text.")
+            self.personal_token = token
+            QMessageBox.warning(None, "Information", "Created the following token, please copy it to use later '" + token + "'.")
+            foundToken = token
+        else:
+            foundToken = None
+        parameters[self.GITHUB_PASS] = foundToken
+        return foundToken
+
     def checkParameterValues(self, parameters, context):
         min_zoom = 0
         max_zoom = self.parameterAsInt(parameters, self.ZOOM_MAX, context)
@@ -835,7 +955,20 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         curUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
         if curUser and '@' in curUser:
             return False, self.tr("Please use your username instead of the email address.")
-        gitExe = self.parameterAsString(parameters, self.GIT_EXECUTABLE, context)
+        curPass = self.getAccessToken(parameters, context)
+        if curPass is None:
+            webbrowser.open_new('https://github.com/login')
+            return False, self.tr("Error: Invalid user or password. Please visit the link https://github.com/login and check your password.")
+        gitRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
+        if ' ' in gitRepository:
+            return False, self.tr("Error: Space is not allowed in 'remote folder' (repository) name.")
+        if not GitHub.existsRepository(curUser, gitRepository) and QMessageBox.Yes != QMessageBox.question(None, "Repository not found", "The repository was not found, want to create a new repository?", defaultButton=QMessageBox.Yes, buttons=(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)):
+            return False, self.tr("Error: A valid repository is needed please enter a valid repository name or create a new one.")
+        elif not GitHub.existsRepository(curUser, gitRepository) and not self.createRepo(parameters, context):
+            if QMessageBox.question(None, "The creation have failed. Want to open the link https://github.com/new to create a new repository?", defaultButton=QMessageBox.Yes) == QMessageBox.Yes:
+                webbrowser.open_new("https://github.com/new")
+            return False, self.tr("Error: Failed to create the repository, please create a one at: https://github.com/new")
+        gitExe = self.getGitExe(parameters, context)
         if not gitExe or not os.path.isfile(gitExe):
             return False, self.tr("Select your git executable program.\n"+str(gitExe)+"\nIt can be downloadable at: https://git-scm.com/downloads")
         if not self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context):
@@ -848,13 +981,12 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         self.layers = [l for l in project.layerTreeRoot().layerOrder() if l in visible_layers]
         OptionsCfg.write(
             self.parameterAsInt(parameters, self.ZOOM_MAX, context),
-            self.parameterAsString(parameters, self.GIT_EXECUTABLE, context),
+            self.getGitExe(parameters, context),
             self.parameterAsString(parameters, self.LAYER_ATTRIBUTE, context),
             self.parameterAsString(parameters, self.GITHUB_USER, context),
             self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context),
             self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context),
-            self.parameterAsBool(parameters, self.SAVE_PASSWORD, context),
-            self.parameterAsString(parameters, self.GITHUB_PASS, context)
+            self.getAccessToken(parameters, context)
         )
         return True
 
@@ -864,7 +996,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         if not output_dir:
             raise QgsProcessingException(self.tr('You need to specify output directory.'))
         writer = DirectoryWriter(output_dir, is_tms)
-        GitHub.prepareEnvironment(self.parameterAsString(parameters, self.GIT_EXECUTABLE, context))
+        GitHub.prepareEnvironment(self.getGitExe(parameters, context))
         self.generate(writer, parameters, context, feedback)
         results = {'OUTPUT_DIRECTORY': output_dir}
         return results
