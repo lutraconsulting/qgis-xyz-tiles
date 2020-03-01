@@ -6,7 +6,7 @@
 name=Mappia Publisher
 qgisMinimumVersion=3.4
 description=Share your maps online (raster and shape). Easily make your QGIS maps online 24/7 (for free, no private server required).
-version=1.5
+version=1.6
 author=Danilo da Silveira Figueira
 email=danilo@csr.ufmg.br
 

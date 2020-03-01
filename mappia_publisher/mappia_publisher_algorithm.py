@@ -670,7 +670,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterString(
                 self.GITHUB_USER,
-                self.tr('Github USERNAME (Please create a free account at https://github.com)'),
+                self.tr('Github USERNAME (Please create a free account registering at https://github.com)'),
                 optional=False,
                 defaultValue=options['gh_user']
             )
@@ -817,10 +817,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         feedback.setProgressText("Copy the link above in any browser to see your maps online.")
         feedback.setProgressText(curMapsUrl)
         feedback.setProgress(100)
-        if QMessageBox.question(None, "Published the selected maps",
-                             "Congratulations your maps are now available online.\nThe shareable link was generated, should open it in your browser?",
-                             defaultButton=QMessageBox.Yes) == QMessageBox.Yes:
-            webbrowser.open_new(curMapsUrl)
+        QMessageBox.warning(None, "Maps published online", "Congratulations your maps are now available online.\nThe shareable link was generated, and will be shown in your browser.")
+        webbrowser.open_new(curMapsUrl)
         writer.close()
 
     #Return the rendered map (QImage) for the metatile zoom level.
