@@ -97,7 +97,7 @@ class ShowPublishedMapsAlgorithm(QgsProcessingAlgorithm):
         lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'View the repository maps'
+        return 'View'
 
     def displayName(self):
         """

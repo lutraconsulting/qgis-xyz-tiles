@@ -33,8 +33,12 @@ __revision__ = '$Format:%H$'
 import os
 import sys
 import inspect
+import processing
 
+from qgis.PyQt.QtWidgets import QAction
+from qgis.PyQt.QtGui import QIcon
 from qgis.core import QgsApplication
+from qgis.utils import iface
 from mappia_publisher.mappia_publisher_provider import MappiaPublisherProvider
 
 cmd_folder = os.path.split(inspect.getfile(inspect.currentframe()))[0]
@@ -47,14 +51,33 @@ class MappiaPublisherPlugin(object):
 
     def __init__(self):
         self.provider = None
+        self.dlg = None
 
     def initProcessing(self):
-        """Init Processing provider for QGIS >= 3.8."""
         self.provider = MappiaPublisherProvider()
         QgsApplication.processingRegistry().addProvider(self.provider)
+        icon = os.path.join(os.path.dirname(__file__), "icon.png")
+        self.shareAction = QAction(QIcon(icon), u"Share your maps", iface.mainWindow())
+        self.shareAction.triggered.connect(self.publishCallback)
+        iface.addPluginToWebMenu(u"&Mappia", self.shareAction)
+        iface.addToolBarIcon(self.shareAction)
+        self.viewAction = QAction(QIcon(icon), u"View shared maps", iface.mainWindow())
+        self.viewAction.triggered.connect(self.viewMapsCallback)
+        iface.addPluginToWebMenu(u"&Mappia", self.viewAction)
+        iface.addToolBarIcon(self.viewAction)
 
     def initGui(self):
         self.initProcessing()
 
     def unload(self):
         QgsApplication.processingRegistry().removeProvider(self.provider)
+        iface.removePluginWebMenu(u"&Mappia", self.shareAction)
+        iface.removeToolBarIcon(self.shareAction)
+        iface.removePluginWebMenu(u"&Mappia", self.viewAction)
+        iface.removeToolBarIcon(self.viewAction)
+
+    def publishCallback(self):
+        processing.execAlgorithmDialog("mappia:Publish")
+
+    def viewMapsCallback(self):
+        processing.execAlgorithmDialog("mappia:View")

@@ -4,3 +4,4 @@
 .*options.json
 .*options2.json
 __pycache__/
+scripts/deploy.bat
