@@ -32,6 +32,7 @@ __revision__ = '$Format:%H$'
 
 from qgis.core import QgsProcessingProvider
 from mappia_publisher.mappia_publisher_algorithm import MappiaPublisherAlgorithm
+from mappia_publisher.show_published_maps_algorithm import ShowPublishedMapsAlgorithm
 
 
 class MappiaPublisherProvider(QgsProcessingProvider):
@@ -55,6 +56,7 @@ class MappiaPublisherProvider(QgsProcessingProvider):
         """
         # add additional algorithms here
         self.addAlgorithm(MappiaPublisherAlgorithm())
+        self.addAlgorithm(ShowPublishedMapsAlgorithm())
 
     def id(self):
         """

@@ -32,19 +32,23 @@ __revision__ = '$Format:%H$'
 
 import math
 import os
-import re
 import csv
-import json
-import collections
 import io
+import json
 from pathlib import Path
+import platform
 import requests
-from . import xmltodict
-import unicodedata
-from datetime import datetime
-from xml.sax.saxutils import escape
+import webbrowser
+from time import sleep
+import tempfile
+import subprocess
+from .WMSCapabilities import WMSCapabilities
+from .OptionsCfg import OptionsCfg
+from .GitHub import GitHub
+from .UTILS import UTILS
 from enum import Enum
-from qgis.PyQt.QtCore import QCoreApplication, QSize, Qt
+from qgis.PyQt.QtCore import QCoreApplication, QSize, Qt, QVariant
+from qgis.PyQt.QtWidgets import QMessageBox
 from qgis.PyQt.QtGui import QImage, QColor, QPainter
 from qgis.core import (QgsProject,
                        QgsPointXY,
@@ -59,7 +63,6 @@ from qgis.core import (QgsProject,
                        QgsProcessingParameterExtent,
                        QgsProcessingParameterBoolean,
                        QgsProcessingParameterString,
-                       QgsProcessingParameterAuthConfig,
                        QgsProcessingException,
                        QgsProcessingAlgorithm,
                        QgsLabelingEngineSettings,
@@ -73,7 +76,6 @@ from qgis.core import (QgsProject,
                        QgsVectorSimplifyMethod,
                        QgsProcessingParameterFeatureSource,
                        QgsProcessingParameterFeatureSink)
-
 
 # TMS functions taken from https://alastaira.wordpress.com/2011/07/06/converting-tms-tile-coordinates-to-googlebingosm-tile-coordinates/ #spellok
 def tms(ytile, zoom):
@@ -100,15 +102,9 @@ def num2deg(xtile, ytile, zoom):
     lat_deg = math.degrees(lat_rad)
     return (lat_deg, lon_deg)
 
-# https://gis.stackexchange.com/questions/130027/getting-a-plugin-path-using-python-in-qgis
-def resolve(name, basepath=None):
-    if not basepath:
-      basepath = os.path.dirname(os.path.realpath(__file__))
-    return os.path.join(basepath, name)
 
 # https://stackoverflow.com/questions/377017/test-if-executable-exists-in-python/12611523
 def which(program):
-    import os
     def is_exe(fpath):
         return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
 
@@ -135,36 +131,6 @@ class Tile:
         lat1, lon1 = num2deg(self.x, self.y, self.z)
         lat2, lon2 = num2deg(self.x + 1, self.y + 1, self.z)
         return [lon1, lat2, lon2, lat1]
-
-class OptionsCfg:
-
-    @staticmethod
-    def createCfg(zoom_max=None, gitExe=None, attrName=None, ghUser=None, ghRepository=None, folder=None, savePass=None, ghPass=None):
-        defaults = dict()
-        defaults["zoom_max"] = zoom_max if zoom_max is not None else 9
-        defaults["git_exe"] = gitExe if gitExe is not None else ''
-        defaults["attrName"] = attrName if attrName is not None else '1'
-        defaults["gh_user"] = ghUser if ghUser is not None else ''
-        defaults["gh_repository"] = ghRepository if ghRepository is not None else ''
-        defaults["folder"] = folder if folder is not None else ''
-        defaults["save_pass"] = savePass if savePass is not None else False
-        defaults["gh_pass"] = ghPass if ghPass is not None else ''
-        return defaults
-
-    @staticmethod
-    def write(zoom_max, gitExe, attrName, ghUser, ghRepository, folder, savePass, ghPass):
-        with open(resolve("options.json"), 'w', encoding="utf-8") as f:
-            json.dump(OptionsCfg.createCfg(zoom_max, gitExe, attrName, ghUser, ghRepository, folder, savePass, ghPass), f)
-
-    @staticmethod
-    def read():
-        with open(resolve("options.json"), 'r', encoding="utf-8") as f:
-            cfg = json.load(f)
-            defaults = OptionsCfg.createCfg()
-            for key in cfg.keys():
-                defaults[key] = cfg[key]
-        return defaults
-
 
 def get_metatiles(extent, zoom, size=4):
     #west_edge, south_edge, east_edge, north_edge = extent
@@ -335,164 +301,6 @@ class DirectoryWriter:
         pass
 
 
-class GitHub:
-    @staticmethod
-    def prepareEnvironment(gitExecutable):
-        if not gitExecutable:
-            return
-        gitProgramFolder = os.path.dirname(gitExecutable)
-        #feedback.pushConsoleInfo(gitProgramFolder) #cinza escondido
-        #feedback.setProgressText(gitExecutable) #preto
-        os.environ['GIT_PYTHON_GIT_EXECUTABLE'] = gitExecutable
-        #initialPath = os.environ['PATH']
-        os.environ['GIT_PYTHON_REFRESH'] = 'quiet'
-        import git
-        git.refresh(gitExecutable)
-        try:
-            os.environ['PATH'].split(os.pathsep).index(gitProgramFolder)
-        except:
-            os.environ["PATH"] = gitProgramFolder + os.pathsep + os.environ["PATH"]
-
-    @staticmethod
-    def getGitExe():
-        gitExe = ''
-        try:
-            gitExe = os.environ['GIT_PYTHON_GIT_EXECUTABLE']
-        except:
-            pass
-        return gitExe
-
-    @staticmethod
-    def getGitUrl(githubUser, githubRepository):
-        return "https://github.com/" + githubUser + "/" + githubRepository + "/"
-
-    #No password to allow using configured SSHKey.
-    @staticmethod
-    def getGitPassUrl(user, repository, password):
-        if password is None or not password:
-            return GitHub.getGitUrl(user, repository)
-        return "https://" + user + ":" + password + "@github.com/" + user + "/" + repository + ".git"
-
-    @staticmethod
-    def lsremote(url):
-        import git
-        remote_refs = {}
-        g = git.cmd.Git()
-        for ref in g.ls_remote(url).split('\n'):
-            hash_ref_list = ref.split('\t')
-            remote_refs[hash_ref_list[1]] = hash_ref_list[0]
-        return remote_refs
-
-    @staticmethod
-    def existsRepository(user, repository, feedback):
-        try:
-            feedback.pushConsoleInfo("URL: " + GitHub.getGitUrl(user, repository))
-            resp = requests.get(GitHub.getGitUrl(user, repository))
-            if resp.status_code == 200:
-                return True
-            else:
-                return False
-            #result = GitHub.lsremote(GitHub.getGitUrl(user, repository))
-        except:
-            return False
-
-    @staticmethod
-    def isOptionsOk(folder, user, repository, feedback):
-        from git import Repo
-        from git import InvalidGitRepositoryError
-
-        #feedback.pushConsoleInfo('Github found commiting to your account.')
-        if not GitHub.existsRepository(user, repository, feedback):
-            feedback.pushConsoleInfo("The repository " + repository + " doesn't exists.\nPlease create a new one at https://github.com/new .")
-            return False
-
-        #Cria ou pega o repositório atual.
-        repo = None
-        if not os.path.exists(folder) or (os.path.exists(folder) and not os.listdir(folder)):
-            repo = Repo.clone_from(GitHub.getGitUrl(user, repository), folder)
-            assert (os.path.exists(folder))
-        else:
-            try:
-                repo = Repo(folder)
-                repoUrl = repo.git.remote("-v")
-                expectedUrl = GitHub.getGitUrl(user, repository)
-                if repoUrl and not (expectedUrl in re.compile("[\\n\\t ]").split(repoUrl)):
-                    feedback.pushConsoleInfo("Your remote URL " + repoUrl + " does not match the expected url " + expectedUrl)
-                    return False
-            except InvalidGitRepositoryError:
-                feedback.pushConsoleInfo("The destination folder must be a repository or an empty folder.")
-                #repo = Repo.init(folder, bare=False)
-                return False
-
-        if repo.git.status("--porcelain"):
-            feedback.pushConsoleInfo("Error: Local repository is not clean.\nPlease commit the changes made to local repository before run.\nUse: git add * and git commit -m \"MSG\"")
-            return False
-        return True
-
-    @staticmethod
-    def publishTilesToGitHub(folder, user, repository, feedback, password=None):  # ghRepository, ghUser, ghPassphrase
-        from git import Repo
-        from git import InvalidGitRepositoryError
-
-        feedback.pushConsoleInfo('Github found commiting to your account.')
-
-        #Não está funcionando a validação
-        feedback.pushConsoleInfo(user + ' at ' + repository)
-        if not GitHub.existsRepository(user, repository, feedback):
-            feedback.pushConsoleInfo("The repository " + repository + " doesn't exists.\nPlease create a new one at https://github.com/new .")
-            return None
-
-        #Cria ou pega o repositório atual.
-        repo = None
-        if not os.path.exists(folder) or os.path.exists(folder) and not os.listdir(folder):
-            repo = Repo.clone_from(GitHub.getGitUrl(user, repository), folder)
-            assert (os.path.exists(folder))
-        else:
-            try:
-                repo = Repo(folder)
-            except InvalidGitRepositoryError:
-                feedback.pushConsoleInfo("The destination folder must be a repository or an empty folder.")
-                repo = Repo.init(folder, bare=False)
-
-        now = datetime.now()
-        # https://stackoverflow.com/questions/6565357/git-push-requires-username-and-password
-        repo.git.config("credential.helper", "store")
-        repo.git.config("--global", "credential.helper", "'cache --timeout 7200'")
-        try:
-            feedback.pushConsoleInfo("Git: Pulling your repository current state.")
-            repo.git.pull("-s recursive", "-X ours", GitHub.getGitUrl(user, repository), "master")
-            feedback.pushConsoleInfo("Git: Doing checkout.")
-            repo.git.fetch(GitHub.getGitUrl(user, repository), "master")
-            feedback.pushConsoleInfo("Git: Doing checkout.")
-            repo.git.checkout("--ours")
-        except:
-            pass
-
-        originName = "mappia"
-
-        try:
-            repo.git.remote("add", originName, GitHub.getGitUrl(user, repository))
-        except:
-            repo.git.remote("set-url", originName, GitHub.getGitUrl(user, repository))
-
-        feedback.pushConsoleInfo('Git: Add all generated tiles to your repository.')
-        repo.git.add(all=True)  # Adiciona todos arquivos
-        #feedback.pushConsoleInfo("Git: Mergin.")
-        #repo.git.merge("-s recursive", "-X ours")
-        #feedback.pushConsoleInfo("Git: Pushing changes.")
-        #repo.git.push(GitHub.getGitUrl(user, repository), "master:refs/heads/master")
-        if repo.index.diff(None) or repo.untracked_files:
-            feedback.pushConsoleInfo("No changes, nothing to commit.")
-        feedback.pushConsoleInfo("Git: Committing changes.")
-        repo.git.commit(m="QGIS - " + now.strftime("%d/%m/%Y %H:%M:%S"))
-        # feedback.pushConsoleInfo("CREATING TAG")
-        # tag = now.strftime("%Y%m%d-%H%M%S")
-        # new_tag = repo.create_tag(tag, message='Automatic tag "{0}"'.format(tag))
-        # repo.remotes[originName].push(new_tag)
-        feedback.pushConsoleInfo("Git: Pushing modifications to remote repository.")
-        repo.git.push(GitHub.getGitPassUrl(user, repository, password), "master:refs/heads/master")
-        return None
-
 
 #Supported Operations
 class OperationType(Enum):
@@ -517,34 +325,34 @@ class OperationType(Enum):
     def __str__(self):
         return self.name
 
-class UTILS:
+def install_git():
+    def userConfirmed():
+        return QMessageBox.Yes == QMessageBox.question(None, "Git not automatically identified.",
+                             "Click 'Yes' to automatically download extract and use the git executable, otherwise please find the executable manually.",
+                             defaultButton=QMessageBox.Yes,
+                             buttons=(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel))
 
-    """
-    Use safer names.
-    """
-    @staticmethod
-    def normalizeName(name, isFilename=True, escapeXml=True, removeAccents=True):
-        normalized = name
-        if escapeXml:
-            normalized = UTILS.escapeXml(normalized)
-        if removeAccents:
-            normalized = UTILS.strip_accents(normalized)
-        if isFilename:
-            normalized = UTILS.escapeFilename(normalized)
-        return normalized.lower()
+    if (("Windows" in platform.system() or "CYGWIN_NT" in platform.system()) and userConfirmed()) == False:
+        return ''
+    def download_file(url, toDir):
+        local_filename = os.path.join(toDir, url.split('/')[-1])
+        # NOTE the stream=True parameter below
+        with requests.get(url, stream=True) as r:
+            r.raise_for_status()
+            with open(local_filename, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    if chunk:  # filter out keep-alive new chunks
+                        f.write(chunk)
+                        # f.flush()
+        return local_filename
 
-    @staticmethod
-    def escapeFilename(content):
-        return re.sub(r"\W", "_", content)
-
-    @staticmethod
-    def escapeXml(content):
-        return escape(content)
-
-    @staticmethod
-    def strip_accents(s):
-       return ''.join(c for c in unicodedata.normalize('NFD', s)
-                      if unicodedata.category(c) != 'Mn')
+    tmpDir = tempfile.mkdtemp()
+    #with tempfile.TemporaryDirectory() as tmpDir:
+    gitUrl = "https://github.com/git-for-windows/git/releases/download/v2.25.1.windows.1/PortableGit-2.25.1-64-bit.7z.exe"
+    selfExtractor = download_file(gitUrl, tmpDir)
+    portableGit = os.path.join(tmpDir, "portablegit")
+    subprocess.check_output([selfExtractor, '-o', portableGit, "-y"])
+    return os.path.join(portableGit, 'mingw64', 'bin', 'git.exe')
 
 
 class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
@@ -584,6 +392,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     WIDTH = 256
     HEIGHT = 256
 
+    found_git = ''
+
     def initAlgorithm(self, config):
 
         #super(MappiaPublisherAlgorithm, self).initAlgorithm()
@@ -599,11 +409,10 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterMultipleLayers(
                 self.LAYERS,
-                self.tr('\nMaps to publish - Select the maps to share and view online.\n\n    PS: The accents will be removed.\n    PS2: Spaces and special characters will be replaced by \'_\''),
+                self.tr('Select the maps you want to display online'),
                 QgsProcessing.TypeMapLayer
             )
         )
-
 
         #self.addParameter(
         #    QgsProcessingParameterEnum(
@@ -614,24 +423,6 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         #    )
         #)
 
-        self.addParameter(
-            QgsProcessingParameterFolderDestination(
-                self.OUTPUT_DIRECTORY,
-                self.tr('\nOutput directory - Select a directory to save the generated map schema.\n\n    Please select an empty directory or an already used or a QGIS temporary directory.'),
-                optional=False,
-                defaultValue=options["folder"]
-            )
-        )
-
-        self.addParameter(
-            QgsProcessingParameterNumber(
-                self.ZOOM_MAX,
-                self.tr('\nMaximum zoom [1 ~ 13] (The maximum zoom level to your maps witch will be visible online.)\n\n    Higher values means more zoom levels but also increased publishing time.\n    PS: For each increase of one in max zoom value almost double the publishing time.\n    PS2: Indicated zoom levels for each type of geographic data https://wiki.openstreetmap.org/wiki/Zoom_levels'),
-                minValue=1,
-                maxValue=13,
-                defaultValue=options["zoom_max"]
-            )
-        )
 
         #TODO Implement layer attribute later.
         # self.addParameter(
@@ -645,17 +436,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
         self.addParameter(
             QgsProcessingParameterString(
-                self.GIT_EXECUTABLE,
-                self.tr('\nExecutable git - Put the git executable here. (If it is not installed, please follow the steps):\n\n    Download GIT at: https://git-scm.com/downloads .\n    Close and reopen QGIS after install GIT.'),
-                optional=False,
-                defaultValue=self.getGitDefault(options)
-            )
-        )
-
-        self.addParameter(
-            QgsProcessingParameterString(
                 self.GITHUB_USER,
-                self.tr('\nGithub USERNAME - Your github account username. (Please create an account at https://github.com)'),
+                self.tr('Github USERNAME (Please create a free account registering at https://github.com)'),
                 optional=False,
                 defaultValue=options['gh_user']
             )
@@ -664,30 +446,48 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterString(
                 self.GITHUB_PASS,
-                self.tr('\nGithub AUTHENTHICATION - (Please pick one of the 3 available methods \'Access Token|Password|Empty\'):\n\n 1) "Access Token" - (prefered) - Paste the account token. (To create a token please follow these steps):\n      1.1) Visit the link https://github.com/settings/tokens\n      1.2) On site click on the "Generate new token" button.\n      1.3) Select the option "scope \'repo\'" to enable publication.\n      1.4) Click on "Generate Token".\n      1.5) Copy the token from site.\n 2) "Password" (deprecated) - Enter your Github account password.\n 3) "Empty" (advanced) - Leave it empty. (If your git is already configured with a default key)'),
-                optional=True,
+                self.tr('Github PASSWORD or access key. - (We only use your password to generate a more secure key. At the next time that you open this plugin this field will show the generated key)'),
+                optional=False,
                 defaultValue=options['gh_pass']
-            )
-        )
-
-        self.addParameter(
-            QgsProcessingParameterBoolean(
-                self.SAVE_PASSWORD,
-                self.tr('Check to remember the authentication. (Stored in plain text)'),
-                optional=True,
-                defaultValue=options['save_pass']
             )
         )
 
         self.addParameter(
             QgsProcessingParameterString(
                 self.GITHUB_REPOSITORY,
-                self.tr('\nGithub REPOSITORY - The repository name.\n\n    Visit https://github.com/new to create a new repository.\n    Paste the repository name here.'),
+                self.tr('The name of the "remote folder" (or repository in GIT) where to store your maps.'),
                 optional=False,
                 defaultValue=options['gh_repository']
             )
         )
 
+        self.addParameter(
+            QgsProcessingParameterNumber(
+                self.ZOOM_MAX,
+                self.tr('Maximum zoom [1 ~ 13] (The maximum zoom level to the online shared maps.)'),
+                minValue=1,
+                maxValue=13,
+                defaultValue=options["zoom_max"]
+            )
+        )
+
+        self.addParameter(
+            QgsProcessingParameterString(
+                self.GIT_EXECUTABLE,
+                self.tr('Git client executable path.'),
+                optional=True,
+                defaultValue=self.getGitDefault(options)
+            )
+        )
+
+        self.addParameter(
+            QgsProcessingParameterFolderDestination(
+                self.OUTPUT_DIRECTORY,
+                self.tr('Directory to generate the data locally. (Can leave it empty to automatically use a temporary folder)'),
+                optional=True,
+                defaultValue=options["folder"]
+            )
+        )
 
     def getGitDefault(self, options):
         if options['git_exe'] and os.path.exists(options['git_exe']):
@@ -699,7 +499,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
     #Create the metatiles to the given layer in given zoom levels
     def createLayerMetatiles(self, projection, layer, minZoom, maxZoom):
-        mapExtentReprojected = self.getMapExtent(layer, projection)
+        mapExtentReprojected = UTILS.getMapExtent(layer, projection)
         metatiles_by_zoom = {}
         metatilesize = 4
         for zoom in range(minZoom, maxZoom + 1):
@@ -707,12 +507,14 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             metatiles_by_zoom[zoom] = metatiles
         return metatiles_by_zoom
 
-    #Return the map extents in the given projection
-    @staticmethod
-    def getMapExtent(layer, projection):
-        mapExtent = layer.extent()
-        src_to_proj = QgsCoordinateTransform(layer.crs(), projection, QgsProject.instance().transformContext() if getattr(layer, "transformContext", None) is None else layer.transformContext())
-        return src_to_proj.transformBoundingBox(mapExtent)
+    def getTotalTiles(self, wgs_crs, min_zoom, max_zoom, layers):
+        total = 0
+        for layer in layers:
+            metatiles_by_zoom = self.createLayerMetatiles(wgs_crs, layer, min_zoom, max_zoom)
+            for zoom in range(min_zoom, max_zoom + 1):
+                total = total + len(metatiles_by_zoom[zoom])
+        return total
+        #sum([len(self.createLayerMetatiles(wgs_crs, layer, min_zoom, max_zoom)) for layer in layers])
 
     def generate(self, writer, parameters, context, feedback):
         feedback.setProgress(1)
@@ -725,15 +527,16 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         #ghKey = self.parameterAsString(parameters, self.GITHUB_KEY, context)
         ghUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
         ghRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
-        ghPassword = self.parameterAsString(parameters, self.GITHUB_PASS, context)
+        ghPassword = GitHub.getAccessToken(ghUser, self.parameterAsString(parameters, self.GITHUB_PASS, context))
+        parameters[self.GITHUB_PASS] = ghPassword
         mapOperation = OperationType.RGBA #OperationType(self.parameterAsEnum(parameters, self.OPERATION, context))
         feedback.setProgressText("Operation: " + str(mapOperation))
         wgs_crs = QgsCoordinateReferenceSystem('EPSG:4326')
         dest_crs = QgsCoordinateReferenceSystem('EPSG:3857')
         layers = self.parameterAsLayerList(parameters, self.LAYERS, context)
-        metatilesCount = sum([len(self.createLayerMetatiles(wgs_crs, layer, min_zoom, max_zoom)) for layer in layers])
+        metatilesCount = self.getTotalTiles(wgs_crs, min_zoom, max_zoom, layers)
         progress = 0
-        if self.parameterAsString(parameters, self.GIT_EXECUTABLE, context) and not GitHub.isOptionsOk(writer.folder, ghUser, ghRepository, feedback):
+        if self.getGitExe(parameters, context) and not GitHub.isOptionsOk(writer.folder, ghUser, ghRepository, feedback):
             feedback.setProgressText("Error : Invalid repository selected")
             return False
         for layer in layers:
@@ -752,32 +555,34 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                     for r, c, tile in metatile.tiles:
                         tile_img = mapRendered.copy(self.WIDTH * r, self.HEIGHT * c, self.WIDTH, self.HEIGHT)
                         writer.write_tile(tile, tile_img, mapOperation.getName(), layerTitle, layerAttr)
-                    progress += 1
-                    feedback.setProgress(100 * (progress / metatilesCount))
+                    progress = progress + 1
+                    feedback.setProgress(98 * (progress / metatilesCount))
             writer.writeLegendPng(layer, layerTitle, layerAttr, mapOperation.getName())
             writer.write_description(layerTitle, layerAttr, cellType, nullValue, mapOperation.getName())
             writer.write_capabilities(layer, layerTitle, layerAttr)
             writer.writeLegendJson(layer, layerTitle, layerAttr, mapOperation.getName())
-            writer.writeThumbnail(self.getMapExtent(layer, dest_crs), layerTitle, layerAttr, mapOperation.getName(), layerRenderSettings)
+            writer.writeThumbnail(UTILS.getMapExtent(layer, dest_crs), layerTitle, layerAttr, mapOperation.getName(), layerRenderSettings)
         feedback.pushConsoleInfo('Finished map tile generation.')
-        if GitHub.getGitExe():
-            createdTag = GitHub.publishTilesToGitHub(writer.folder, ghUser, ghRepository, feedback, ghPassword)
-            giturl = GitHub.getGitUrl(ghUser, ghRepository)
-            #FIXME Space in the map name will cause errors.
-            storeUrl = giturl #+ "@" + createdTag + "/"
-            feedback.pushConsoleInfo("All the maps in this repository:\n(Please only use maps with the same zoom level.)\n")
-            feedback.pushConsoleInfo("https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl
-                + "/&zoomlevels="+str(max_zoom)
-                + "&remotemap=" + WMSCapabilities.getAllLayers(writer.folder, layerAttr) + "\n")
-            feedback.setProgressText("Current published Maps:\n")
-            feedback.pushConsoleInfo("https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl
-                + "/&zoomlevels=" + str(max_zoom) + "&remotemap=" + ",".join(
-                    ["GH:" + UTILS.normalizeName(layer.name()) + ";" + layerAttr for layer in layers]))
-            feedback.pushConsoleInfo("Copy the link above in any browser to see your maps online.")
-        # else:
-        #     feedback.pushConsoleInfo("View the results online: \nhttps://maps.csr.ufmg.br/calculator/?queryid=152&remotemap="
-        #                              + ",".join(["GH:" + layer.name().lower() + ";" + layerAttr for layer in layers]))
+        createdTag = GitHub.publishTilesToGitHub(writer.folder, ghUser, ghRepository, feedback, ghPassword)
+        giturl = GitHub.getGitUrl(ghUser, ghRepository)
+        #FIXME Space in the map name will cause errors.
+        storeUrl = giturl #+ "@" + createdTag + "/"
+        feedback.pushConsoleInfo("All the maps in this repository:\n(Please only use maps with the same zoom level.)\n")
+        allLayers = WMSCapabilities.getAllLayers(Path(os.path.join(writer.folder, "getCapabilities.xml")).read_text(), layerAttr)
+        feedback.pushConsoleInfo("https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl
+            + "/&zoomlevels="+str(max_zoom)
+            + "&remotemap=" + ",".join(allLayers) + "\n")
+        feedback.pushConsoleInfo("Current published Maps:\n")
+        generatedMaps = ["GH:" + UTILS.normalizeName(layer.name()) + ";" + layerAttr for layer in layers]
+        curMapsUrl = "https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl \
+                     + "/&zoomlevels=" + str(max_zoom) + "&remotemap=" + ",".join(generatedMaps)
+        feedback.setProgressText("Copy the link above in any browser to see your maps online.")
+        feedback.setProgressText(curMapsUrl)
+        feedback.setProgress(100)
         writer.close()
+        webbrowser.open_new(curMapsUrl)
+        QMessageBox.warning(None, "Maps published online", "Congratulations your maps are now available online.\nThe shareable link was generated, and will be shown in your browser.")
+        return {"MAPS_URL": curMapsUrl, 'PUBLISHED_MAPS': generatedMaps, 'REPOSITORY_MAPS': allLayers}
 
     #Return the rendered map (QImage) for the metatile zoom level.
     def renderMetatile(self, metatile, dest_crs, outputFormat, renderSettings, transformContext, sourceCrs):
@@ -826,6 +631,29 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             pass #Is not a raster
         return settings
 
+    def getGitExe(self, parameters, context):
+        gitExe = self.parameterAsString(parameters, self.GIT_EXECUTABLE, context)
+        if (not gitExe or not os.path.isfile(gitExe)) and (not 'GIT_PYTHON_GIT_EXECUTABLE' in os.environ or not os.path.isfile(os.environ['GIT_PYTHON_GIT_EXECUTABLE'])) and (not self.found_git or os.path.isfile(self.found_git)):
+            gitExe = install_git()
+            parameters[self.GIT_EXECUTABLE] = gitExe
+        return gitExe
+
+    def createRepo(self, parameters, context):
+        payload = {
+            'name': self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context),
+            'description': 'Repository cointaining maps of the mappia publisher.',
+            'auto_init': 'true'
+        }
+        token = GitHub.getAccessToken(self.parameterAsString(parameters, self.GITHUB_USER, context), self.parameterAsString(parameters, self.GITHUB_PASS, context))
+        curUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
+        resp = requests.post('https://api.github.com/user/repos', auth=(curUser, token), data=json.dumps(payload))
+        if resp.status_code == 201:
+            sleep(1)
+            return True
+        else:
+            return False
+
+
     def checkParameterValues(self, parameters, context):
         min_zoom = 0
         max_zoom = self.parameterAsInt(parameters, self.ZOOM_MAX, context)
@@ -836,7 +664,20 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         curUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
         if curUser and '@' in curUser:
             return False, self.tr("Please use your username instead of the email address.")
-        gitExe = self.parameterAsString(parameters, self.GIT_EXECUTABLE, context)
+        curPass = GitHub.getAccessToken(self.parameterAsString(parameters, self.GITHUB_USER, context), self.parameterAsString(parameters, self.GITHUB_PASS, context))
+        if curPass is None:
+            webbrowser.open_new('https://github.com/login')
+            return False, self.tr("Error: Invalid user or password. Please visit the link https://github.com/login and check your password.")
+        gitRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
+        if ' ' in gitRepository:
+            return False, self.tr("Error: Space is not allowed in 'remote folder' (repository) name.")
+        if not GitHub.existsRepository(curUser, gitRepository) and QMessageBox.Yes != QMessageBox.question(None, "Repository not found", "The repository was not found, want to create a new repository?", defaultButton=QMessageBox.Yes, buttons=(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)):
+            return False, self.tr("Error: A valid repository is needed please enter a valid repository name or create a new one.")
+        elif not GitHub.existsRepository(curUser, gitRepository) and not self.createRepo(parameters, context):
+            if QMessageBox.question(None, "The creation have failed. Want to open the link https://github.com/new to create a new repository?", defaultButton=QMessageBox.Yes) == QMessageBox.Yes:
+                webbrowser.open_new("https://github.com/new")
+            return False, self.tr("Error: Failed to create the repository, please create a one at: https://github.com/new")
+        gitExe = self.getGitExe(parameters, context)
         if not gitExe or not os.path.isfile(gitExe):
             return False, self.tr("Select your git executable program.\n"+str(gitExe)+"\nIt can be downloadable at: https://git-scm.com/downloads")
         if not self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context):
@@ -849,13 +690,12 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         self.layers = [l for l in project.layerTreeRoot().layerOrder() if l in visible_layers]
         OptionsCfg.write(
             self.parameterAsInt(parameters, self.ZOOM_MAX, context),
-            self.parameterAsString(parameters, self.GIT_EXECUTABLE, context),
+            self.getGitExe(parameters, context),
             self.parameterAsString(parameters, self.LAYER_ATTRIBUTE, context),
             self.parameterAsString(parameters, self.GITHUB_USER, context),
             self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context),
             self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context),
-            self.parameterAsBool(parameters, self.SAVE_PASSWORD, context),
-            self.parameterAsString(parameters, self.GITHUB_PASS, context)
+            GitHub.getAccessToken(self.parameterAsString(parameters, self.GITHUB_USER, context), self.parameterAsString(parameters, self.GITHUB_PASS, context))
         )
         return True
 
@@ -865,10 +705,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         if not output_dir:
             raise QgsProcessingException(self.tr('You need to specify output directory.'))
         writer = DirectoryWriter(output_dir, is_tms)
-        GitHub.prepareEnvironment(self.parameterAsString(parameters, self.GIT_EXECUTABLE, context))
-        self.generate(writer, parameters, context, feedback)
-        results = {'OUTPUT_DIRECTORY': output_dir}
-        return results
+        GitHub.prepareEnvironment(self.getGitExe(parameters, context))
+        return self.generate(writer, parameters, context, feedback)
 
     def name(self):
         """
@@ -878,7 +716,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'Web Publisher'
+        return 'Publish your maps'
 
     def displayName(self):
         """
@@ -902,309 +740,10 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         contain lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'Share maps'
+        return 'Online mapping'
 
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)
 
     def createInstance(self):
         return MappiaPublisherAlgorithm()
-
-
-
-
-class WMSCapabilities:
-
-    @staticmethod
-    def getDefaultCapabilities():
-        return '''<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE WMT_MS_Capabilities SYSTEM "http://maps.csr.ufmg.br:80/geoserver/schemas/wms/1.1.1/WMS_MS_Capabilities.dtd"[
-    <!ELEMENT VendorSpecificCapabilities (TileSet*) >
-    <!ELEMENT TileSet (SRS, BoundingBox?, Resolutions, Width, Height, Format, Layers*, Styles*) >
-    <!ELEMENT Resolutions (#PCDATA) >
-    <!ELEMENT Width (#PCDATA) >
-    <!ELEMENT Height (#PCDATA) >
-    <!ELEMENT Layers (#PCDATA) >
-    <!ELEMENT Styles (#PCDATA) >
-    ]>
-    <WMT_MS_Capabilities version="1.1.1" updateSequence="63258">
-      <Service>
-        <Name>OGC:WMS</Name>
-        <Title>CSR Web Map Service</Title>
-        <Abstract>Compliant WMS Response</Abstract>
-        <KeywordList>
-          <Keyword>WFS</Keyword>
-          <Keyword>WMS</Keyword>
-          <Keyword>GEOSERVER</Keyword>
-        </KeywordList>
-        <OnlineResource xmlns:xlink="http://www.w3.org/1999/xlink" xlink:type="simple" xlink:href="http://geoserver.sourceforge.net/html/index.php"/>
-        <ContactInformation>
-          <ContactPersonPrimary>
-            <ContactPerson>GITHUB owner</ContactPerson>
-            <ContactOrganization>GITHUB owner</ContactOrganization>
-          </ContactPersonPrimary>
-          <ContactPosition>Chief geographer</ContactPosition>
-          <ContactAddress>
-            <AddressType>Work</AddressType>
-            <Address/>
-            <City>Alexandria</City>
-            <StateOrProvince/>
-            <PostCode/>
-            <Country>Egypt</Country>
-          </ContactAddress>
-          <ContactVoiceTelephone/>
-          <ContactFacsimileTelephone/>
-          <ContactElectronicMailAddress>claudius.ptolomaeus@gmail.com</ContactElectronicMailAddress>
-        </ContactInformation>
-        <Fees>NONE</Fees>
-        <AccessConstraints>NONE</AccessConstraints>
-      </Service>
-      <Capability>
-        <Request>
-          <GetCapabilities>
-            <Format>application/vnd.ogc.wms_xml</Format>
-            <DCPType>
-              <HTTP>
-                <Get>
-                  <OnlineResource xmlns:xlink="http://www.w3.org/1999/xlink" xlink:type="simple" xlink:href="http://maps.csr.ufmg.br:80/geoserver/wms?SERVICE=WMS&amp;"/>
-                </Get>
-                <Post>
-                  <OnlineResource xmlns:xlink="http://www.w3.org/1999/xlink" xlink:type="simple" xlink:href="http://maps.csr.ufmg.br:80/geoserver/wms?SERVICE=WMS&amp;"/>
-                </Post>
-              </HTTP>
-            </DCPType>
-          </GetCapabilities>
-          <GetMap>
-            <Format>image/png</Format>
-            <DCPType>
-              <HTTP>
-                <Get>
-                  <OnlineResource xmlns:xlink="http://www.w3.org/1999/xlink" xlink:type="simple" xlink:href="http://maps.csr.ufmg.br:80/geoserver/wms?SERVICE=WMS&amp;"/>
-                </Get>
-              </HTTP>
-            </DCPType>
-          </GetMap>
-          <GetFeatureInfo>
-            <Format>text/plain</Format>
-            <Format>application/vnd.ogc.gml</Format>
-            <Format>application/vnd.ogc.gml/3.1.1</Format>
-            <Format>text/html</Format>
-            <Format>application/json</Format>
-            <DCPType>
-              <HTTP>
-                <Get>
-                  <OnlineResource xmlns:xlink="http://www.w3.org/1999/xlink" xlink:type="simple" xlink:href="http://maps.csr.ufmg.br:80/geoserver/wms?SERVICE=WMS&amp;"/>
-                </Get>
-                <Post>
-                  <OnlineResource xmlns:xlink="http://www.w3.org/1999/xlink" xlink:type="simple" xlink:href="http://maps.csr.ufmg.br:80/geoserver/wms?SERVICE=WMS&amp;"/>
-                </Post>
-              </HTTP>
-            </DCPType>
-          </GetFeatureInfo>
-          <DescribeLayer>
-            <Format>application/vnd.ogc.wms_xml</Format>
-            <DCPType>
-              <HTTP>
-                <Get>
-                  <OnlineResource xmlns:xlink="http://www.w3.org/1999/xlink" xlink:type="simple" xlink:href="http://maps.csr.ufmg.br:80/geoserver/wms?SERVICE=WMS&amp;"/>
-                </Get>
-              </HTTP>
-            </DCPType>
-          </DescribeLayer>
-          <GetLegendGraphic>
-            <Format>image/png</Format>
-            <DCPType>
-              <HTTP>
-                <Get>
-                  <OnlineResource xmlns:xlink="http://www.w3.org/1999/xlink" xlink:type="simple" xlink:href="http://maps.csr.ufmg.br:80/geoserver/wms?SERVICE=WMS&amp;"/>
-                </Get>
-              </HTTP>
-            </DCPType>
-          </GetLegendGraphic>
-          <GetStyles>
-            <Format>application/vnd.ogc.sld+xml</Format>
-            <DCPType>
-              <HTTP>
-                <Get>
-                  <OnlineResource xmlns:xlink="http://www.w3.org/1999/xlink" xlink:type="simple" xlink:href="http://maps.csr.ufmg.br:80/geoserver/wms?SERVICE=WMS&amp;"/>
-                </Get>
-              </HTTP>
-            </DCPType>
-          </GetStyles>
-        </Request>
-        <Exception>
-          <Format>application/vnd.ogc.se_xml</Format>
-          <Format>application/vnd.ogc.se_inimage</Format>
-        </Exception>
-        <VendorSpecificCapabilities>
-        </VendorSpecificCapabilities>
-        <UserDefinedSymbolization SupportSLD="1" UserLayer="1" UserStyle="1" RemoteWFS="1"/>
-        <Layer queryable="0" opaque="0" noSubsets="0">
-          <Title>MapServer via GItHub</Title>
-          <Abstract>GitHub WMS</Abstract>
-          <!--All supported EPSG projections:-->
-          <SRS>EPSG:3857</SRS>
-          <SRS>EPSG:4326</SRS>
-          <SRS>EPSG:900913</SRS>
-          <SRS>EPSG:42303</SRS>
-          <LatLonBoundingBox minx="-180.00004074199998" miny="-90.0" maxx="180.0000000000001" maxy="90.0"/>
-        </Layer>
-      </Capability>
-    </WMT_MS_Capabilities>'''
-
-    @staticmethod
-    def convertCoordinateProj(crsProj, fromX, fromY, outputProjected):
-
-        regex = r"^[ ]*PROJCS"
-        isProjected = re.match(regex, crsProj)
-
-        if (isProjected and outputProjected) or ( not isProjected and  not outputProjected):
-            return (fromX, fromY)
-        else:
-            fProj = QgsCoordinateReferenceSystem()
-            fProj.createFromWkt(crsProj)
-            tProj = QgsCoordinateReferenceSystem()
-            tProj.createFromProj4("+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext  +no_defs" if outputProjected else "+proj=longlat +datum=WGS84 +no_defs ")
-            newCoord = QgsCoordinateTransform(fProj, tProj, QgsProject.instance()).transform(QgsPointXY(fromX, fromY), True)
-        return (newCoord.x, newCoord.y)
-
-    @staticmethod
-    def getMapDescription(layerNameID, layerAttr, latMinX, latMinY, latMaxX, latMaxY, projMinX, projMinY, projMaxX, projMaxY):
-        layerAttr = UTILS.normalizeName(layerAttr)
-        layerNameID = UTILS.normalizeName(layerNameID)
-        # Inverti o minx/miny e maxX/maxY do epsg 4326 pq estava trocando no geoserver, mas n sei pq isso acontece.
-        return """<CONTENT>
-          <Layer queryable="1" opaque="0">
-          <Name>GH:""" + layerNameID + """</Name>
-          <Title>""" + layerNameID + """</Title>
-          <Abstract>GH:""" + layerNameID + """ ABSTRACT</Abstract>
-          <KeywordList>
-            <Keyword>GITHUB</Keyword>
-          </KeywordList>
-          <SRS>EPSG:4326</SRS>
-          <LatLonBoundingBox minx=\"""" + str(latMinX) + """\" miny=\"""" + str(latMinY) + """\" maxx=\"""" + str(
-            latMaxX) + """\" maxy=\"""" + str(latMaxY) + """\"/>
-          <BoundingBox SRS="EPSG:4326" minx=\"""" + str(projMinX) + """\" miny=\"""" + str(
-            projMinY) + """\" maxx=\"""" + str(projMaxX) + """\" maxy=\"""" + str(projMaxY) + """\"/>
-          <Style>
-           <Name>""" + layerAttr + """</Name>
-           <Title>""" + layerAttr + """</Title>
-           <Abstract/>
-           <LegendURL width="20" height="20">
-           <Format>image/png</Format>
-           <OnlineResource xmlns:xlink="http://www.w3.org/1999/xlink" xlink:type="simple" xlink:href="https://maps.csr.ufmg.br:443/geoserver/wms?request=GetLegendGraphic&amp;format=image%2Fpng&amp;width=20&amp;height=20&amp;layer=""" + layerNameID + """\"/>
-           </LegendURL>
-          </Style>
-        </Layer>
-        </CONTENT>
-        """
-
-    @staticmethod
-    def getTileSetDescription(fileNameId, latMinX, latMinY, latMaxX, latMaxY, projMinX, projMinY, projMaxX, projMaxY):
-        # <BoundingBox SRS="EPSG:4326" minx=\"""" + str(latMinX) + """\" miny=\"""" + str(latMinY) + """\" maxx=\"""" + str(latMaxX) + """\" maxy=\"""" + str(latMaxY) + """\"/>
-        return """<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-        <CONTENT>
-          <TileSet>
-            <SRS>EPSG:4326</SRS>
-            <BoundingBox SRS="EPSG:4326" minx="-180.0" miny="-90.0" maxx="0.0" maxy="90.0"/>
-        <Resolutions>0.703125 0.3515625 0.17578125 0.087890625 0.0439453125 0.02197265625 0.010986328125 0.0054931640625 0.00274658203125 0.001373291015625 6.866455078125E-4 3.4332275390625E-4 1.71661376953125E-4 8.58306884765625E-5 4.291534423828125E-5 2.1457672119140625E-5 1.0728836059570312E-5 5.364418029785156E-6 2.682209014892578E-6 1.341104507446289E-6 6.705522537231445E-7 3.3527612686157227E-7 </Resolutions>
-            <Width>256</Width>
-            <Height>256</Height>
-            <Format>image/png</Format>
-            <Layers>GH:""" + fileNameId + """</Layers>
-            <Styles/>
-          </TileSet>
-          <TileSet>
-            <SRS>EPSG:900913</SRS>
-            <BoundingBox SRS="EPSG:900913" minx="-2.003750834E7" miny="-2.003750834E7" maxx="2.003750834E7" maxy="2.003750834E7"/>
-        <Resolutions>156543.03390625 78271.516953125 39135.7584765625 19567.87923828125 9783.939619140625 4891.9698095703125 2445.9849047851562 1222.9924523925781 611.4962261962891 305.74811309814453 152.87405654907226 76.43702827453613 38.218514137268066 19.109257068634033 9.554628534317017 4.777314267158508 2.388657133579254 1.194328566789627 0.5971642833948135 0.29858214169740677 0.14929107084870338 0.07464553542435169 0.037322767712175846 0.018661383856087923 0.009330691928043961 0.004665345964021981 0.0023326729820109904 0.0011663364910054952 5.831682455027476E-4 2.915841227513738E-4 1.457920613756869E-4 </Resolutions>
-            <Width>256</Width>
-            <Height>256</Height>
-            <Format>image/png</Format>
-            <Layers>GH:""" + fileNameId + """</Layers>
-            <Styles/>
-          </TileSet>
-          </CONTENT>
-        """
-        # <BoundingBox SRS="EPSG:900913" minx=\"""" + str(projMinX) + """\" miny=\"""" + str(projMinY) + """\" maxx=\"""" + str(projMaxX) + """\" maxy=\"""" + str(projMaxY) + """\"/>
-
-    @staticmethod
-    def getAllLayers(directory, layerAttr):
-        #FIXME should use the style name to identify the layer attributes
-        doc = xmltodict.parse(Path(os.path.join(directory, "getCapabilities.xml")).read_text())
-        layerDefinitions = doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer']
-        if layerDefinitions is not None and isinstance(layerDefinitions, list) and len(layerDefinitions):
-            allLayers = [curLayer["Name"] for curLayer in doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer']]
-        else:
-            allLayers = []
-        return ",".join([layer + ";" + layerAttr for layer in allLayers])
-
-    @staticmethod
-    def updateXML(directory, layer, layerTitle, layerAttr):
-        extents = layer.extent()
-        xmlContent = ""
-        capabilitiesPath = os.path.join(directory, "getCapabilities.xml")
-        if os.path.isfile(capabilitiesPath):
-            capabilitiesContent = Path(capabilitiesPath).read_text()
-        else:
-            capabilitiesContent = WMSCapabilities.getDefaultCapabilities()
-        doc = xmltodict.parse(capabilitiesContent)
-
-        filename = UTILS.normalizeName(layerTitle) #layer Name no qgis
-
-        #extents, projection
-        projMaxX = layer.extent().xMaximum()
-        projMinX = layer.extent().xMinimum()
-        projMaxY = layer.extent().yMaximum()
-        projMinY = layer.extent().yMinimum()
-        llExtent = MappiaPublisherAlgorithm.getMapExtent(layer, QgsCoordinateReferenceSystem('EPSG:4326'))
-        latMaxX = llExtent.xMaximum()
-        latMinX = llExtent.xMinimum()
-        latMaxY = llExtent.yMaximum()
-        latMinY = llExtent.yMinimum()
-
-
-        if 'Layer' in doc['WMT_MS_Capabilities']['Capability']['Layer']:
-            if type(doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer']) is collections.OrderedDict:
-                curLayer = doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer']
-                doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer'] = [curLayer]
-
-        if 'Layer' in doc['WMT_MS_Capabilities']['Capability']['Layer']:
-            for iLayer in range(len(doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer']) - 1, -1, -1):
-                curLayer = doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer'][iLayer]
-                if "Name" in curLayer and curLayer["Name"] == "GH:" + filename:
-                    doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer'].pop(iLayer)
-
-        #FIXME One attribute only. (Is always overwriting)
-        newLayerDescription = xmltodict.parse(
-            WMSCapabilities.getMapDescription(filename, layerAttr, latMinX, latMinY, latMaxX, latMaxY,
-                                              projMinX, projMinY, projMaxX, projMaxY))['CONTENT']
-        if 'Layer' in doc['WMT_MS_Capabilities']['Capability']['Layer']:
-            doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer'].append(newLayerDescription['Layer'])
-        else:
-            doc['WMT_MS_Capabilities']['Capability']['Layer'] = newLayerDescription
-
-        newTileSetDescription = xmltodict.parse(
-            WMSCapabilities.getTileSetDescription(filename, latMinX, latMinY, latMaxX, latMaxY, projMinX, projMinY,
-                                                  projMaxX, projMaxY))['CONTENT']
-
-        if doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities'] is not None and 'TileSet' in \
-                doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities']:
-            if type(doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities'][
-                        'TileSet']) is collections.OrderedDict:
-                curTileSet = doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities']['TileSet']
-                doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities']['TileSet'] = [
-                    curTileSet]  # Transforms into a list
-
-        if doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities'] is not None and 'TileSet' in \
-                doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities']:
-            for iTileSet in range(
-                    len(doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities']['TileSet']) - 1,
-                    -1, -1):
-                curTileSet = doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities']['TileSet'][iTileSet]
-                if "Layers" in curTileSet and curTileSet["Layers"] == "GH:" + filename:
-                    doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities']['TileSet'].pop(iTileSet)
-            doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities']['TileSet'] += newTileSetDescription[
-                'TileSet']  # Dois elementos c mesma chave representa com lista
-        else:
-            doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities'] = newTileSetDescription
-        Path(capabilitiesPath).write_text(xmltodict.unparse(doc, pretty=True))
