@@ -1,5 +1,5 @@
 
-set OSGEO=F:\Danilo\Programas\QGIS_34_15
+set OSGEO=C:\OSGeo4W64
 set PATH=%OSGEO%\apps\Python37\Scripts\;%PATH%
 SET OSGEO4W_ROOT=%OSGEO%
 call "%OSGEO4W_ROOT%"\bin\o4w_env.bat
@@ -27,6 +27,6 @@ rem python -m pip install pb_tool
 %~d0
 cd %~dp0../mappia_publisher/
 
-call pb_tool deploy
+call pb_tool deploy -y
 
 cd %~dp0

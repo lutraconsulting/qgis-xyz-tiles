@@ -68,6 +68,7 @@ class ShowPublishedMapsAlgorithm(QgsProcessingAlgorithm):
         storeUrl = GitHub.getGitUrl(ghUser, ghRepository)
         capabilitiesTxt = requests.get(url='https://raw.githubusercontent.com/'+ghUser+'/'+ghRepository+'/master/getCapabilities.xml')
         foundMaps = []
+        mapsUrl = "Sorry, no maps were found."
         if not GitHub.existsRepository(ghUser, ghRepository):
             feedback.pushConsoleInfo("Sorry, the selected repository was not found. (" + storeUrl + ")")
         elif capabilitiesTxt.status_code == HTTPStatus.OK:
@@ -97,7 +98,7 @@ class ShowPublishedMapsAlgorithm(QgsProcessingAlgorithm):
         lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'View the repository maps'
+        return 'View'
 
     def displayName(self):
         """

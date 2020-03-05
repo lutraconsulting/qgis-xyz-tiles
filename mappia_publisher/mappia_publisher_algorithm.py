@@ -483,7 +483,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterFolderDestination(
                 self.OUTPUT_DIRECTORY,
-                self.tr('Directory to generate the data locally. (Can leave it empty to automatically use a temporary folder)'),
+                self.tr('Output directory. (Leave it empty to use a temporary folder)'),
                 optional=True,
                 defaultValue=options["folder"]
             )
@@ -716,7 +716,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'Publish your maps'
+        return 'Publish'
 
     def displayName(self):
         """
