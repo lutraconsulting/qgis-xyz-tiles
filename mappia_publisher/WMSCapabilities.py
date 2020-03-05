@@ -1,6 +1,7 @@
 
 from . import xmltodict
 from .UTILS import UTILS
+from collections import OrderedDict
 import collections
 from pathlib import Path
 import os
@@ -228,7 +229,9 @@ class WMSCapabilities:
         doc = xmltodict.parse(content)
         layerDefinitions = doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer']
         if layerDefinitions is not None and isinstance(layerDefinitions, list) and len(layerDefinitions):
-            allLayers = [curLayer["Name"] for curLayer in doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer']]
+            allLayers = [curLayer["Name"] for curLayer in layerDefinitions]
+        elif layerDefinitions is not None and isinstance(doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer'], collections.OrderedDict) and len(layerDefinitions):
+            allLayers = [layerDefinitions["Name"]]
         else:
             allLayers = []
         return allLayers

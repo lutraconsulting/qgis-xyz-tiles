@@ -67,6 +67,8 @@ class ShowPublishedMapsAlgorithm(QgsProcessingAlgorithm):
         ghRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
         storeUrl = GitHub.getGitUrl(ghUser, ghRepository)
         capabilitiesTxt = requests.get(url='https://raw.githubusercontent.com/'+ghUser+'/'+ghRepository+'/master/getCapabilities.xml')
+        print(capabilitiesTxt.text)
+        print("\n----------------------------------\n")
         foundMaps = []
         mapsUrl = "Sorry, no maps were found."
         if not GitHub.existsRepository(ghUser, ghRepository):
