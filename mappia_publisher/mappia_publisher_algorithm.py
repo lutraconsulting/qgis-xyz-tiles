@@ -581,7 +581,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         feedback.setProgress(100)
         writer.close()
         webbrowser.open_new(curMapsUrl)
-        QMessageBox.warning(None, "Maps published online", "Congratulations your maps are now available online.\nThe shareable link was generated, and will be shown in your browser.")
+        #QMessageBox.warning(None, "Maps published online", "Congratulations your maps are now available online.\nThe shareable link was generated, and will be shown in your browser.")
         return {"MAPS_URL": curMapsUrl, 'PUBLISHED_MAPS': generatedMaps, 'REPOSITORY_MAPS': allLayers}
 
     #Return the rendered map (QImage) for the metatile zoom level.
