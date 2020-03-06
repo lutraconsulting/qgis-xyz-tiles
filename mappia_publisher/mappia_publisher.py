@@ -57,14 +57,21 @@ class MappiaPublisherPlugin(object):
         self.provider = MappiaPublisherProvider()
         QgsApplication.processingRegistry().addProvider(self.provider)
         icon = os.path.join(os.path.dirname(__file__), "icon.png")
+
         self.shareAction = QAction(QIcon(icon), u"Share your maps", iface.mainWindow())
         self.shareAction.triggered.connect(self.publishCallback)
         iface.addPluginToWebMenu(u"&Mappia", self.shareAction)
         iface.addToolBarIcon(self.shareAction)
+
         self.viewAction = QAction(QIcon(icon), u"View shared maps", iface.mainWindow())
         self.viewAction.triggered.connect(self.viewMapsCallback)
         iface.addPluginToWebMenu(u"&Mappia", self.viewAction)
         iface.addToolBarIcon(self.viewAction)
+
+        self.reportAction = QAction(QIcon(icon), u"Send us issues, requests, messages", iface.mainWindow())
+        self.reportAction.triggered.connect(self.getReport)
+        iface.addPluginToWebMenu(u"&Mappia", self.reportAction)
+        iface.addToolBarIcon(self.reportAction)
 
     def initGui(self):
         self.initProcessing()
@@ -75,9 +82,14 @@ class MappiaPublisherPlugin(object):
         iface.removeToolBarIcon(self.shareAction)
         iface.removePluginWebMenu(u"&Mappia", self.viewAction)
         iface.removeToolBarIcon(self.viewAction)
+        iface.removePluginWebMenu(u"&Mappia", self.reportAction)
+        iface.removeToolBarIcon(self.reportAction)
+
+    def getReport(self):
+        processing.execAlgorithmDialog("mappia:Report")
 
     def publishCallback(self):
-        processing.execAlgorithmDialog("mappia:Publish")
+        processing.execAlgorithmDialog("mappia:Share")
 
     def viewMapsCallback(self):
         processing.execAlgorithmDialog("mappia:View")

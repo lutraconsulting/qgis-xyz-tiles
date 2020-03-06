@@ -404,15 +404,6 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
         options = OptionsCfg.read()
 
-        # We add the input vector features source. It can have any kind of
-        # geometry.
-        self.addParameter(
-            QgsProcessingParameterMultipleLayers(
-                self.LAYERS,
-                self.tr('Select the maps you want to display online'),
-                QgsProcessing.TypeMapLayer
-            )
-        )
 
         #self.addParameter(
         #    QgsProcessingParameterEnum(
@@ -458,6 +449,16 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                 self.tr('The name of the "remote folder" (or repository in GIT) where to store your maps.'),
                 optional=False,
                 defaultValue=options['gh_repository']
+            )
+        )
+
+        # We add the input vector features source. It can have any kind of
+        # geometry.
+        self.addParameter(
+            QgsProcessingParameterMultipleLayers(
+                self.LAYERS,
+                self.tr('Select the maps you want to display online (Only maps with a valid projection)'),
+                QgsProcessing.TypeMapLayer
             )
         )
 
@@ -716,14 +717,14 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'Publish'
+        return 'Share'
 
     def displayName(self):
         """
         Returns the translated algorithm name, which should be used for any
         user-visible display of the algorithm name.
         """
-        return self.tr(self.name())
+        return self.tr('Share your maps')
 
     def group(self):
         """
