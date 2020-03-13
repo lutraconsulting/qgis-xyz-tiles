@@ -696,13 +696,14 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                     feedback.pushConsoleInfo("Waiting user finish the credentials validation in Github.")
                 tryCount = tryCount + 1
                 credentials = GitHub.getCredentials(state)
+            feedback.pushConsoleInfo(json.dumps(credentials))
             parameters[self.GITHUB_PASS] = credentials['token']
             parameters[self.GITHUB_USER] = credentials['user']
             curUser = parameters[self.GITHUB_USER]
             curPass = parameters[self.GITHUB_PASS]
         if GitHub.testLogin(curUser, curPass) == False:
-            return False, self.tr(
-                "Error: Invalid user or password. Please visit the link https://github.com/login and check your password.")
+            feedback.pushConsoleInfo("Error: Invalid user or password. Please visit the link https://github.com/login and check your password.")
+            return False
         # elif curPass and (GitHub.testLogin(curUser, curPass) == False):
         #     return False, self.tr(
         #         "Error: Invalid user or password. Please visit the link https://github.com/login and check your password.")
@@ -724,23 +725,25 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                 "The repository was not found, want to create a new repository?",
                 defaultButton=QMessageBox.Yes,
                 buttons=(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)):
-            return False, self.tr(
-                "Error: A valid repository is needed please enter a valid repository name or create a new one.")
+            feedback.pushConsoleInfo("Error: A valid repository is needed please enter a valid repository name or create a new one.")
+            return False
         elif not GitHub.existsRepository(curUser, gitRepository) and not self.createRepo(parameters, context):
             if QMessageBox.question(
                     None,
                     "The creation have failed. Want to open the link https://github.com/new to create a new repository?",
                     defaultButton=QMessageBox.Yes) == QMessageBox.Yes:
                 webbrowser.open_new("https://github.com/new")
-            return False, self.tr(
-                "Error: Failed to create the repository, please create a one at: https://github.com/new")
+            feedback.pushConsoleInfo("Error: Failed to create the repository, please create a one at: https://github.com/new")
+            return False
         feedback.pushConsoleInfo("AEW2")
         gitExe = self.getGitExe(parameters, context)
         if not gitExe or not os.path.isfile(gitExe):
-            return False, self.tr("Select your git executable program.\n" + str(
+            feedback.pushConsoleInfo("Select your git executable program.\n" + str(
                 gitExe) + "\nIt can be downloadable at: https://git-scm.com/downloads")
+            return False
         if not self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context):
-            return False, self.tr("Please specify your repository name.\nYou can create one at: https://github.com/new")
+            feedback.pushConsoleInfo("Please specify your repository name.\nYou can create one at: https://github.com/new")
+            return False
 
         feedback.pushConsoleInfo("AEW 3")
         OptionsCfg.write(
