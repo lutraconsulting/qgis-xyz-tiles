@@ -68,7 +68,7 @@ class MappiaPublisherPlugin(object):
         iface.addPluginToWebMenu(u"&Mappia", self.viewAction)
         iface.addToolBarIcon(self.viewAction)
 
-        self.reportAction = QAction(QIcon(icon), u"Send us issues, requests, messages", iface.mainWindow())
+        self.reportAction = QAction(QIcon(icon), u"Feedback report", iface.mainWindow())
         self.reportAction.triggered.connect(self.getReport)
         iface.addPluginToWebMenu(u"&Mappia", self.reportAction)
         iface.addToolBarIcon(self.reportAction)

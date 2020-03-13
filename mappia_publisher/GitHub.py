@@ -174,6 +174,15 @@ class GitHub:
         return None
 
     @staticmethod
+    def getCredentials(secret):
+        #Danilo #FIXME colocar UNIQUE no BD
+        resp = requests.get('https://csr.ufmg.br/imagery/verify_key.php?state=' + secret)
+        if resp.status_code == 200:
+            return json.loads(resp.text)
+        else:
+            return None
+
+    @staticmethod
     def getAccessToken(curUser, curPass):
         def isNotToken(content):
             return not re.match(r'^[a-z0-9]{40}$', content)

@@ -108,7 +108,7 @@ class ReportRequestAlgorithm(QgsProcessingAlgorithm):
         Returns the translated algorithm name, which should be used for any
         user-visible display of the algorithm name.
         """
-        return self.tr('Report us: issues, requests or messages')
+        return self.tr('Feedback report')
 
     def group(self):
         """

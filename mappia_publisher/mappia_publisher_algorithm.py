@@ -60,6 +60,7 @@ from qgis.core import (QgsProject,
                        QgsRasterLayer,
                        QgsCoordinateTransform,
                        QgsMapRendererParallelJob,
+                       QgsProcessingParameterDefinition,
                        QgsProcessingParameterExtent,
                        QgsProcessingParameterBoolean,
                        QgsProcessingParameterString,
@@ -394,6 +395,10 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
     found_git = ''
 
+
+    # def flags(self):
+    #     return super().flags() | QgsProcessingAlgorithm.FlagSupportsInPlaceEdits | QgsProcessingAlgorithm.FlagNoThreading
+
     def initAlgorithm(self, config):
 
         #super(MappiaPublisherAlgorithm, self).initAlgorithm()
@@ -427,26 +432,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
         self.addParameter(
             QgsProcessingParameterString(
-                self.GITHUB_USER,
-                self.tr('Github USERNAME (Please create a free account registering at https://github.com)'),
-                optional=False,
-                defaultValue=options['gh_user']
-            )
-        )
-
-        self.addParameter(
-            QgsProcessingParameterString(
-                self.GITHUB_PASS,
-                self.tr('Github PASSWORD or access key. - (We only use your password to generate a more secure key. At the next time that you open this plugin this field will show the generated key)'),
-                optional=False,
-                defaultValue=options['gh_pass']
-            )
-        )
-
-        self.addParameter(
-            QgsProcessingParameterString(
                 self.GITHUB_REPOSITORY,
-                self.tr('The name of the "remote folder" (or repository in GIT) where to store your maps.'),
+                self.tr('Repository name (or map group name)'),
                 optional=False,
                 defaultValue=options['gh_repository']
             )
@@ -457,38 +444,58 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterMultipleLayers(
                 self.LAYERS,
-                self.tr('Select the maps you want to display online (Only maps with a valid projection)'),
+                self.tr('Maps to display online'),
                 QgsProcessing.TypeMapLayer
             )
         )
 
-        self.addParameter(
-            QgsProcessingParameterNumber(
-                self.ZOOM_MAX,
-                self.tr('Maximum zoom [1 ~ 13] (The maximum zoom level to the online shared maps.)'),
-                minValue=1,
-                maxValue=13,
-                defaultValue=options["zoom_max"]
-            )
-        )
 
-        self.addParameter(
-            QgsProcessingParameterString(
-                self.GIT_EXECUTABLE,
-                self.tr('Git client executable path.'),
-                optional=True,
-                defaultValue=self.getGitDefault(options)
-            )
+        maxZoomParameter = QgsProcessingParameterNumber(
+            self.ZOOM_MAX,
+            self.tr('Map max Zoom level [1 ~ 13] (lower is faster)'),
+            minValue=1,
+            maxValue=13,
+            defaultValue=options["zoom_max"]
         )
+        maxZoomParameter.setFlags(maxZoomParameter.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(maxZoomParameter)
 
-        self.addParameter(
-            QgsProcessingParameterFolderDestination(
-                self.OUTPUT_DIRECTORY,
-                self.tr('Output directory. (Leave it empty to use a temporary folder)'),
-                optional=True,
-                defaultValue=options["folder"]
-            )
+        gitExeParameter = QgsProcessingParameterString(
+            self.GIT_EXECUTABLE,
+            self.tr('Git client executable path.'),
+            optional=True,
+            defaultValue=self.getGitDefault(options)
         )
+        gitExeParameter.setFlags(gitExeParameter.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(gitExeParameter)
+
+        ghUserParameter = QgsProcessingParameterString(
+            self.GITHUB_USER,
+            self.tr('Github USERNAME (Credentials for https://github.com)'),
+            optional=True,
+            defaultValue=options['gh_user']
+        )
+        ghUserParameter.setFlags(ghUserParameter.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(ghUserParameter)
+
+        ghPassParameter = QgsProcessingParameterString(
+            self.GITHUB_PASS,
+            self.tr('Github Access Token'),
+            optional=True,
+            defaultValue=options['gh_pass']
+        )
+        ghPassParameter.setFlags(ghPassParameter.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(ghPassParameter)
+
+        outputDirParameter = QgsProcessingParameterFolderDestination(
+            self.OUTPUT_DIRECTORY,
+            self.tr('Output directory'),
+            optional=True,
+            defaultValue=options["folder"]
+        )
+        outputDirParameter.setFlags(outputDirParameter.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(outputDirParameter)
+
 
     def getGitDefault(self, options):
         if options['git_exe'] and os.path.exists(options['git_exe']):
@@ -525,11 +532,10 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         layerAttr = "1" #TODO self.parameterAsString(parameters, self.LAYER_ATTRIBUTE, context)
         cellType = 'int32'
         nullValue = -128
-        #ghKey = self.parameterAsString(parameters, self.GITHUB_KEY, context)
         ghUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
-        ghRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
-        ghPassword = GitHub.getAccessToken(ghUser, self.parameterAsString(parameters, self.GITHUB_PASS, context))
+        ghPassword = self.parameterAsString(parameters, self.GITHUB_PASS, context)
         parameters[self.GITHUB_PASS] = ghPassword
+        ghRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
         mapOperation = OperationType.RGBA #OperationType(self.parameterAsEnum(parameters, self.OPERATION, context))
         feedback.setProgressText("Operation: " + str(mapOperation))
         wgs_crs = QgsCoordinateReferenceSystem('EPSG:4326')
@@ -537,6 +543,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         layers = self.parameterAsLayerList(parameters, self.LAYERS, context)
         metatilesCount = self.getTotalTiles(wgs_crs, min_zoom, max_zoom, layers)
         progress = 0
+        feedback.pushConsoleInfo("OPA 1")
         if self.getGitExe(parameters, context) and not GitHub.isOptionsOk(writer.folder, ghUser, ghRepository, feedback):
             feedback.setProgressText("Error : Invalid repository selected")
             return False
@@ -645,7 +652,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             'description': 'Repository cointaining maps of the mappia publisher.',
             'auto_init': 'true'
         }
-        token = GitHub.getAccessToken(self.parameterAsString(parameters, self.GITHUB_USER, context), self.parameterAsString(parameters, self.GITHUB_PASS, context))
+        token = self.parameterAsString(parameters, self.GITHUB_PASS, context)
         curUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
         resp = requests.post('https://api.github.com/user/repos', auth=(curUser, token), data=json.dumps(payload))
         if resp.status_code == 201:
@@ -661,34 +668,81 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         if max_zoom < min_zoom:
             return False, self.tr('Invalid zoom levels range.')
         if len(self.parameterAsLayerList(parameters, self.LAYERS, context)) <= 0:
-            return False, self.tr("Please select one map at least.")
-        curUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
-        if curUser and '@' in curUser:
-            return False, self.tr("Please use your username instead of the email address.")
-        curPass = GitHub.getAccessToken(self.parameterAsString(parameters, self.GITHUB_USER, context), self.parameterAsString(parameters, self.GITHUB_PASS, context))
-        if curPass is None:
-            webbrowser.open_new('https://github.com/login')
-            return False, self.tr("Error: Invalid user or password. Please visit the link https://github.com/login and check your password.")
+            return False, self.tr("Please select one map or more.")
         gitRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
         if ' ' in gitRepository:
-            return False, self.tr("Error: Space is not allowed in 'remote folder' (repository) name.")
-        if not GitHub.existsRepository(curUser, gitRepository) and QMessageBox.Yes != QMessageBox.question(None, "Repository not found", "The repository was not found, want to create a new repository?", defaultButton=QMessageBox.Yes, buttons=(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)):
-            return False, self.tr("Error: A valid repository is needed please enter a valid repository name or create a new one.")
-        elif not GitHub.existsRepository(curUser, gitRepository) and not self.createRepo(parameters, context):
-            if QMessageBox.question(None, "The creation have failed. Want to open the link https://github.com/new to create a new repository?", defaultButton=QMessageBox.Yes) == QMessageBox.Yes:
-                webbrowser.open_new("https://github.com/new")
-            return False, self.tr("Error: Failed to create the repository, please create a one at: https://github.com/new")
-        gitExe = self.getGitExe(parameters, context)
-        if not gitExe or not os.path.isfile(gitExe):
-            return False, self.tr("Select your git executable program.\n"+str(gitExe)+"\nIt can be downloadable at: https://git-scm.com/downloads")
-        if not self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context):
-            return False, self.tr("Please specify your repository name.\nYou can create one at: https://github.com/new")
+            return False, self.tr("Error: Space is not allowed in Repository name (remote folder).")
         return super().checkParameterValues(parameters, context)
 
+
     def prepareAlgorithm(self, parameters, context, feedback):
-        project = context.project()
-        visible_layers = [item.layer() for item in project.layerTreeRoot().findLayers() if item.isVisible()]
-        self.layers = [l for l in project.layerTreeRoot().layerOrder() if l in visible_layers]
+        #project = context.project()
+        #visible_layers = [item.layer() for item in project.layerTreeRoot().findLayers() if item.isVisible()]
+        #self.layers = [l for l in project.layerTreeRoot().layerOrder() if l in visible_layers]
+
+        state = UTILS.randomString()
+        curUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
+        if (not curUser):
+            curUser = ''
+        curPass = self.parameterAsString(parameters, self.GITHUB_PASS, context)
+        if curPass is None or (GitHub.testLogin(curUser, curPass) == False and QMessageBox.question(None, "Credentials required", "Invalid credentials, could we open login link for you?") == QMessageBox.Yes):
+            webbrowser.open_new(
+                'https://github.com/login/oauth/authorize?redirect_uri=https://csr.ufmg.br/imagery/get_key.php&client_id=10b28a388b0e66e87cee&login=' + curUser + '&scope=user%20repo&state=' + state)
+            credentials = GitHub.getCredentials(state)
+            tryCount = 0
+            while not credentials:
+                sleep(0.5)
+                if tryCount % 10 == 0:
+                    feedback.pushConsoleInfo("Waiting user finish the credentials validation in Github.")
+                tryCount = tryCount + 1
+                credentials = GitHub.getCredentials(state)
+            parameters[self.GITHUB_PASS] = credentials['token']
+            parameters[self.GITHUB_USER] = credentials['user']
+            curUser = parameters[self.GITHUB_USER]
+            curPass = parameters[self.GITHUB_PASS]
+        if GitHub.testLogin(curUser, curPass) == False:
+            return False, self.tr(
+                "Error: Invalid user or password. Please visit the link https://github.com/login and check your password.")
+        # elif curPass and (GitHub.testLogin(curUser, curPass) == False):
+        #     return False, self.tr(
+        #         "Error: Invalid user or password. Please visit the link https://github.com/login and check your password.")
+
+        # GitHub.testLogin(user, token)
+        #
+        #
+        # if curUser and '@' in curUser:
+        #     return False, self.tr("Please use your username instead of the email address.")
+        # curPass = GitHub.getAccessToken(self.parameterAsString(parameters, self.GITHUB_USER, context), self.parameterAsString(parameters, self.GITHUB_PASS, context))
+        #
+        #
+        #     return False, self.tr("Error: Invalid user or password. Please visit the link https://github.com/login and check your password.")
+
+        gitRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
+        if not GitHub.existsRepository(curUser, gitRepository) and QMessageBox.Yes != QMessageBox.question(
+                None,
+                "Repository not found",
+                "The repository was not found, want to create a new repository?",
+                defaultButton=QMessageBox.Yes,
+                buttons=(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)):
+            return False, self.tr(
+                "Error: A valid repository is needed please enter a valid repository name or create a new one.")
+        elif not GitHub.existsRepository(curUser, gitRepository) and not self.createRepo(parameters, context):
+            if QMessageBox.question(
+                    None,
+                    "The creation have failed. Want to open the link https://github.com/new to create a new repository?",
+                    defaultButton=QMessageBox.Yes) == QMessageBox.Yes:
+                webbrowser.open_new("https://github.com/new")
+            return False, self.tr(
+                "Error: Failed to create the repository, please create a one at: https://github.com/new")
+        feedback.pushConsoleInfo("AEW2")
+        gitExe = self.getGitExe(parameters, context)
+        if not gitExe or not os.path.isfile(gitExe):
+            return False, self.tr("Select your git executable program.\n" + str(
+                gitExe) + "\nIt can be downloadable at: https://git-scm.com/downloads")
+        if not self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context):
+            return False, self.tr("Please specify your repository name.\nYou can create one at: https://github.com/new")
+
+        feedback.pushConsoleInfo("AEW 3")
         OptionsCfg.write(
             self.parameterAsInt(parameters, self.ZOOM_MAX, context),
             self.getGitExe(parameters, context),
@@ -696,7 +750,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             self.parameterAsString(parameters, self.GITHUB_USER, context),
             self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context),
             self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context),
-            GitHub.getAccessToken(self.parameterAsString(parameters, self.GITHUB_USER, context), self.parameterAsString(parameters, self.GITHUB_PASS, context))
+            self.parameterAsString(parameters, self.GITHUB_PASS, context)
         )
         return True
 
@@ -706,6 +760,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         if not output_dir:
             raise QgsProcessingException(self.tr('You need to specify output directory.'))
         writer = DirectoryWriter(output_dir, is_tms)
+        feedback.pushConsoleInfo("AEW4")
         GitHub.prepareEnvironment(self.getGitExe(parameters, context))
         return self.generate(writer, parameters, context, feedback)
 

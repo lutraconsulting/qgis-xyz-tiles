@@ -3,6 +3,9 @@ import unicodedata
 from xml.sax.saxutils import escape
 from qgis.core import (QgsProject, QgsCoordinateTransform)
 
+import random
+import string
+
 class UTILS:
 
     """
@@ -22,6 +25,13 @@ class UTILS:
     @staticmethod
     def escapeFilename(content):
         return re.sub(r"\W", "_", content)
+
+    #https://pynative.com/python-generate-random-string/
+    @staticmethod
+    def randomString(stringLength=27):
+        """Generate a random string of fixed length """
+        letters = string.ascii_lowercase
+        return ''.join(random.choice(letters) for i in range(stringLength))
 
     #Return the map extents in the given projection
     @staticmethod
