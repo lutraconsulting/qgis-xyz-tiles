@@ -37,6 +37,8 @@ class UTILS:
     @staticmethod
     def getMapExtent(layer, projection):
         mapExtent = layer.extent()
+        projection.validate()
+        layer.crs().validate()
         src_to_proj = QgsCoordinateTransform(layer.crs(), projection, QgsProject.instance().transformContext() if getattr(layer, "transformContext", None) is None else layer.transformContext())
         return src_to_proj.transformBoundingBox(mapExtent)
 

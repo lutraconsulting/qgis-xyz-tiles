@@ -6,7 +6,7 @@
 name=Mappia Publisher
 qgisMinimumVersion=3.0
 description=Share your maps online (raster and *shape) as a profissional. Easily make your QGIS maps online 24/7 (for free, no private server required). (Beta Access)
-version=1.9
+version=1.9.1
 author=Danilo da Silveira Figueira
 email=danilo@csr.ufmg.br
 
@@ -27,7 +27,8 @@ repository=https://github.com/MappiaEarth/mappia_publisher
 
 hasProcessingProvider=yes
 # Uncomment the following line and add your changelog:
-# changelog=
+changelog=Some parameters are now marked as advanced.
+     Using the two steps github authentication.
 
 # Tags are comma separated with spaces allowed
 tags=wms, wfs, web, tiles, shapefile, raster, project, vector, openlayers, layers, geometry, analysis
