@@ -54,13 +54,18 @@ from qgis.PyQt.QtGui import QImage, QColor, QPainter
 from qgis.core import (QgsProject,
                        QgsPointXY,
                        QgsLogger,
+                       QgsField,
                        QgsProcessing,
                        QgsMessageLog,
                        QgsRectangle,
                        QgsMapSettings,
                        QgsRasterLayer,
                        QgsCoordinateTransform,
+                       QgsRenderContext,
                        QgsMapRendererParallelJob,
+                       QgsVectorFileWriter,
+                       QgsVectorLayer,
+                       QgsWkbTypes,
                        QgsProcessingParameterDefinition,
                        QgsProcessingParameterExtent,
                        QgsProcessingParameterBoolean,
@@ -79,49 +84,6 @@ from qgis.core import (QgsProject,
                        QgsProcessingParameterFeatureSource,
                        QgsProcessingParameterFeatureSink)
 
-# TMS functions taken from https://alastaira.wordpress.com/2011/07/06/converting-tms-tile-coordinates-to-googlebingosm-tile-coordinates/ #spellok
-def tms(ytile, zoom):
-    n = 2.0 ** zoom
-    ytile = n - ytile - 1
-    return int(ytile)
-
-
-# Math functions taken from https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames #spellok
-def deg2num(lat_deg, lon_deg, zoom):
-    QgsMessageLog.logMessage(" e ".join([str(lat_deg), str(lon_deg), str(zoom)]), tag="Processing")
-    lat_rad = math.radians(lat_deg)
-    n = 2.0 ** zoom
-    xtile = int((lon_deg + 180.0) / 360.0 * n)
-    ytile = int((1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n)
-    return (xtile, ytile)
-
-
-# Math functions taken from https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames #spellok
-def num2deg(xtile, ytile, zoom):
-    n = 2.0 ** zoom
-    lon_deg = xtile / n * 360.0 - 180.0
-    lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * ytile / n)))
-    lat_deg = math.degrees(lat_rad)
-    return (lat_deg, lon_deg)
-
-
-# https://stackoverflow.com/questions/377017/test-if-executable-exists-in-python/12611523
-def which(program):
-    def is_exe(fpath):
-        return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
-
-    fpath, fname = os.path.split(program)
-    if fpath:
-        if is_exe(program):
-            return program
-    else:
-        for path in os.environ["PATH"].split(os.pathsep):
-            exe_file = os.path.join(path, program)
-            if is_exe(exe_file):
-                return exe_file
-
-    return None
-
 # From Tiles XYZ algorithm
 class Tile:
     def __init__(self, x, y, z):
@@ -130,15 +92,15 @@ class Tile:
         self.z = z
 
     def extent(self):
-        lat1, lon1 = num2deg(self.x, self.y, self.z)
-        lat2, lon2 = num2deg(self.x + 1, self.y + 1, self.z)
+        lat1, lon1 = UTILS.num2deg(self.x, self.y, self.z)
+        lat2, lon2 = UTILS.num2deg(self.x + 1, self.y + 1, self.z)
         return [lon1, lat2, lon2, lat1]
 
 def get_metatiles(extent, zoom, size=4):
     #west_edge, south_edge, east_edge, north_edge = extent
     #[extent.xMinimum(), extent.yMinimum(), extent.xMaximum(), extent.yMaximum()]
-    left_tile, top_tile = deg2num(extent.yMaximum(), extent.xMinimum(), zoom)
-    right_tile, bottom_tile = deg2num(extent.yMinimum(), extent.xMaximum(), zoom)
+    left_tile, top_tile = UTILS.deg2num(extent.yMaximum(), extent.xMinimum(), zoom)
+    right_tile, bottom_tile = UTILS.deg2num(extent.yMinimum(), extent.xMaximum(), zoom)
 
     metatiles = {}
     for i, x in enumerate(range(left_tile, right_tile + 1)):
@@ -171,8 +133,8 @@ class MetaTile:
     def extent(self):
         _, _, first = self.tiles[0]
         _, _, last = self.tiles[-1]
-        lat1, lon1 = num2deg(first.x, first.y, first.z)
-        lat2, lon2 = num2deg(last.x + 1, last.y + 1, first.z)
+        lat1, lon1 = UTILS.num2deg(first.x, first.y, first.z)
+        lat2, lon2 = UTILS.num2deg(last.x + 1, last.y + 1, first.z)
         return [lon1, lat2, lon2, lat1]
 
 
@@ -184,10 +146,66 @@ class DirectoryWriter:
         self.folder = folder
         self.is_tms = is_tms
 
+    def getPathForMap(self, mapTitle='', mapAttr='', operation=''):
+        mapAttr = UTILS.normalizeName(mapAttr)
+        mapTitle = UTILS.normalizeName(mapTitle)
+        operation = UTILS.normalizeName(operation.lower())
+        path = os.path.join(self.folder, mapTitle)
+        if len(mapAttr) > 0:
+            path = os.path.join(path, mapAttr)
+        if len(operation) > 0:
+            path = os.path.join(path, operation)
+        return path
+
+    def publishPointsLayer(self, feedback, layer, mapAttr, resultProj):
+        feedback.setProgressText("Publishing map: " + UTILS.normalizeName(layer.name()))
+        clonedLayer = layer.clone()
+        layerRenderer = clonedLayer.renderer()
+        renderContext = QgsRenderContext()
+        renderContext.setUseAdvancedEffects(True)
+        renderContext.setFlags(QgsRenderContext.Flag.RenderBlocking | QgsRenderContext.Flag.Antialiasing)
+        imageList = list()
+        iconField = QgsField('icon_url', QVariant.String, 'text') #Danilo não vou verificar se o mapa ja tem esse atributo
+        feedback.setProgressText("Adding a column 'icon_url'")
+        clonedLayer.startEditing()
+        clonedLayer.addAttribute(iconField)
+        clonedLayer.commitChanges()
+        clonedLayer.startEditing()
+        feedback.setProgressText("Rendering each symbology")
+        for feature in clonedLayer.getFeatures():
+            layerRenderer.startRender(renderContext, clonedLayer.fields())
+            symbol = layerRenderer.originalSymbolsForFeature(feature, renderContext)
+            if len(symbol) <= 0:
+                continue
+            else:
+                if len(symbol) > 1:
+                    feedback.pushConsoleInfo("Warning: Only one symbol for symbology, the others will be ignored.")
+                symbol = symbol[0]
+            layerRenderer.stopRender(renderContext)
+            curImage = symbol.asImage(QSize(24, 24))
+            try:
+                imgIndex = imageList.index(curImage)
+            except Exception as e:
+                imageList.append(curImage)
+                imgIndex = len(imageList) - 1
+            feature.setAttribute("icon_url", './' + str(imgIndex) + ".png")
+            clonedLayer.updateFeature(feature)
+        clonedLayer.commitChanges()
+
+        layerCsvFolder = self.getPathForMap(layer.name(), mapAttr, 'csv')
+        feedback.setProgressText("Export Vector to File "+ str(layerCsvFolder))
+        os.makedirs(layerCsvFolder, exist_ok=True)
+        savedCsv = QgsVectorFileWriter.writeAsVectorFormat(clonedLayer, os.path.join(layerCsvFolder, 'point_layer.csv'),
+                                                'utf-8', resultProj, 'CSV', layerOptions=['GEOMETRY=AS_XY'])
+        #Saving symbology
+        for index in range(len(imageList)):
+            imageList[index].save(os.path.join(layerCsvFolder, str(index) + '.png'))
+        return savedCsv and len(imageList) > 0
+
     def write_tile(self, tile, image, operation, layerTitle, layerAttr):
         layerAttr = UTILS.normalizeName(layerAttr)
         layerTitle = UTILS.normalizeName(layerTitle)
-        directory = os.path.join(self.folder, layerTitle, layerAttr.lower(), operation, str(tile.z))
+        directory = os.path.join(self.getPathForMap(layerTitle, layerAttr.lower(), operation), str(tile.z))
         os.makedirs(directory, exist_ok=True)
         xtile = '{0:04d}'.format(tile.x)
         ytile = '{0:04d}'.format(tile.y)
@@ -202,7 +220,7 @@ class DirectoryWriter:
     def write_description(self, layerTitle, layerAttr, cellTypeName, nullValue, operation):
         layerTitle = UTILS.normalizeName(layerTitle)
         cellTypeName = UTILS.normalizeName(cellTypeName)
-        directory = os.path.join(self.folder, layerTitle, layerAttr.lower())
+        directory = self.getPathForMap(layerTitle, layerAttr.lower())
         filecsv = "description.csv"
         csvPath = os.path.join(directory, filecsv)
         jsonPath = os.path.join(directory, "description.json")
@@ -250,14 +268,14 @@ class DirectoryWriter:
         job = QgsMapRendererCustomPainterJob(renderSettings, painter)
         job.renderSynchronously()
         painter.end()
-        legendFolder = os.path.join(self.folder, mapTitle, mapAttr, operation)
+        legendFolder = self.getPathForMap(mapTitle, mapAttr, operation)
         os.makedirs(legendFolder, exist_ok=True)
         image.save(os.path.join(legendFolder, 'thumbnail.png'), self.format, self.quality)
 
     def writeLegendPng(self, layer, mapTitle, mapAttr, operation):
         mapTitle = UTILS.normalizeName(mapTitle)
         mapAttr = UTILS.normalizeName(mapAttr)
-        legendFolder = os.path.join(self.folder, mapTitle, mapAttr, operation)
+        legendFolder = self.getPathForMap(mapTitle, mapAttr, operation)
 
         # e.g. vlayer = iface.activeLayer()
         options = QgsMapSettings()
@@ -274,6 +292,9 @@ class DirectoryWriter:
             print("saved")
         render.finished.connect(finished)
         render.start()
+
+    def getCapabilitiesPath(self):
+        return os.path.join(self.folder, "getCapabilities.xml")
 
     def writeLegendJson(self, layer, mapTitle, mapAttr, operation):
         mapTitle = UTILS.normalizeName(mapTitle)
@@ -296,7 +317,7 @@ class DirectoryWriter:
                 label = symbology.label()
                 color = symbology.symbol().color()
                 result.append({"color": [color.red(), color.green(), color.blue()], "title": label})
-        jsonFile = Path(os.path.join(self.folder, mapTitle, mapAttr, operation, "legend.json"))
+        jsonFile = Path(os.path.join(self.getPathForMap(mapTitle, mapAttr, operation), "legend.json"))
         jsonFile.write_text(json.dumps(result), encoding="utf-8")
 
     def close(self):
@@ -396,9 +417,6 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     HEIGHT = 256
 
     found_git = ''
-
-    # def flags(self):
-    #     return super().flags() | QgsProcessingAlgorithm.FlagSupportsInPlaceEdits | QgsProcessingAlgorithm.FlagNoThreading
 
     def initAlgorithm(self, config):
 
@@ -502,8 +520,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     def getGitDefault(self, options):
         if options['git_exe'] and os.path.exists(options['git_exe']):
             return options['git_exe']
-        elif which("git.exe") is not None:
-            return which("git.exe")
+        elif UTILS.which("git.exe") is not None:
+            return UTILS.which("git.exe")
         else:
             return ''
 
@@ -543,7 +561,6 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         ghPassword = self.parameterAsString(parameters, self.GITHUB_PASS, context)
         ghRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
         mapOperation = OperationType.RGBA #OperationType(self.parameterAsEnum(parameters, self.OPERATION, context))
-        feedback.setProgressText("Operation: " + str(mapOperation))
         wgs_crs = QgsCoordinateReferenceSystem('EPSG:4326')
         dest_crs = QgsCoordinateReferenceSystem('EPSG:3857')
         layers = self.parameterAsLayerList(parameters, self.LAYERS, context)
@@ -553,28 +570,37 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             feedback.setProgressText("Error : Invalid repository selected")
             return False
         for layer in layers:
-            layerTitle = layer.name()
-            feedback.setProgressText("Publishing map: " + layerTitle)
-            layerRenderSettings = self.createLayerRenderSettings(layer, dest_crs, outputFormat)
-            metatiles_by_zoom = self.createLayerMetatiles(wgs_crs, layer, min_zoom, max_zoom)
-            for zoom in range(min_zoom, max_zoom + 1):
-                feedback.pushConsoleInfo('Generating tiles for zoom level: %s' % zoom)
-                for i, metatile in enumerate(metatiles_by_zoom[zoom]):
-                    if feedback.isCanceled():
-                        break
-                    transformContext = context.transformContext()
-                    mapRendered = self.renderMetatile(metatile, dest_crs, outputFormat, layerRenderSettings,
-                                                      transformContext, wgs_crs)
-                    for r, c, tile in metatile.tiles:
-                        tile_img = mapRendered.copy(self.WIDTH * r, self.HEIGHT * c, self.WIDTH, self.HEIGHT)
-                        writer.write_tile(tile, tile_img, mapOperation.getName(), layerTitle, layerAttr)
-                    progress = progress + 1
-                    feedback.setProgress(98 * (progress / metatilesCount))
-            writer.writeLegendPng(layer, layerTitle, layerAttr, mapOperation.getName())
-            writer.write_description(layerTitle, layerAttr, cellType, nullValue, mapOperation.getName())
-            writer.write_capabilities(layer, layerTitle, layerAttr)
-            writer.writeLegendJson(layer, layerTitle, layerAttr, mapOperation.getName())
-            writer.writeThumbnail(UTILS.getMapExtent(layer, dest_crs), layerTitle, layerAttr, mapOperation.getName(), layerRenderSettings)
+            if isinstance(layer, QgsVectorLayer) and layer.geometryType() == QgsWkbTypes.GeometryType.PointGeometry:
+                feedback.setProgressText("Publishing Point geometry")
+                if writer.publishPointsLayer(feedback, layer, layerAttr, wgs_crs):
+                    feedback.setProgressText("Map publishing sucessfully")
+                else:
+                    feedback.setProgressText("Error publishing map")
+            else:
+                #feedback.setProgressText("Operation: " + str(mapOperation))
+                feedback.setProgressText("Publishing other geometry")
+                layerTitle = layer.name()
+                feedback.setProgressText("Publishing map: " + layerTitle)
+                layerRenderSettings = self.createLayerRenderSettings(layer, dest_crs, outputFormat)
+                metatiles_by_zoom = self.createLayerMetatiles(wgs_crs, layer, min_zoom, max_zoom)
+                for zoom in range(min_zoom, max_zoom + 1):
+                    feedback.pushConsoleInfo('Generating tiles for zoom level: %s' % zoom)
+                    for i, metatile in enumerate(metatiles_by_zoom[zoom]):
+                        if feedback.isCanceled():
+                            break
+                        transformContext = context.transformContext()
+                        mapRendered = self.renderMetatile(metatile, dest_crs, outputFormat, layerRenderSettings,
+                                                          transformContext, wgs_crs)
+                        for r, c, tile in metatile.tiles:
+                            tile_img = mapRendered.copy(self.WIDTH * r, self.HEIGHT * c, self.WIDTH, self.HEIGHT)
+                            writer.write_tile(tile, tile_img, mapOperation.getName(), layerTitle, layerAttr)
+                        progress = progress + 1
+                        feedback.setProgress(98 * (progress / metatilesCount))
+                writer.writeLegendPng(layer, layerTitle, layerAttr, mapOperation.getName())
+                writer.write_description(layerTitle, layerAttr, cellType, nullValue, mapOperation.getName())
+                writer.write_capabilities(layer, layerTitle, layerAttr)
+                writer.writeLegendJson(layer, layerTitle, layerAttr, mapOperation.getName())
+                writer.writeThumbnail(UTILS.getMapExtent(layer, dest_crs), layerTitle, layerAttr, mapOperation.getName(), layerRenderSettings)
         feedback.pushConsoleInfo('Finished map tile generation.')
         createdTag = GitHub.publishTilesToGitHub(writer.folder, ghUser, ghRepository, feedback, ghPassword)
         giturl = GitHub.getGitUrl(ghUser, ghRepository)
