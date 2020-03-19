@@ -549,6 +549,9 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             parameters[self.GIT_EXECUTABLE] = self.getGitExe(parameters[self.GIT_EXECUTABLE])
         return parameters
 
+    def isPointLayer(self, layer):
+        return isinstance(layer, QgsVectorLayer) and layer.geometryType() == QgsWkbTypes.GeometryType.PointGeometry
+
     def generate(self, writer, parameters, context, feedback):
         feedback.setProgress(1)
         min_zoom = 0
@@ -570,7 +573,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             feedback.setProgressText("Error : Invalid repository selected")
             return False
         for layer in layers:
-            if isinstance(layer, QgsVectorLayer) and layer.geometryType() == QgsWkbTypes.GeometryType.PointGeometry:
+            if self.isPointLayer(layer):
                 feedback.setProgressText("Publishing Point geometry")
                 if writer.publishPointsLayer(feedback, layer, layerAttr, wgs_crs):
                     feedback.setProgressText("Map publishing sucessfully")
@@ -612,9 +615,11 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             + "/&zoomlevels="+str(max_zoom)
             + "&remotemap=" + ",".join(allLayers) + "\n")
         feedback.pushConsoleInfo("Current published Maps:\n")
-        generatedMaps = ["GH:" + UTILS.normalizeName(layer.name()) + ";" + layerAttr for layer in layers]
+        generatedMaps = ["GH:" + UTILS.normalizeName(layer.name()) + ";" + layerAttr for layer in layers if not self.isPointLayer(layer)]
+        pointLayers = [UTILS.normalizeName(layer.name()) for layer in layers if self.isPointLayer(layer)]
         curMapsUrl = "https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl \
-                     + "/&zoomlevels=" + str(max_zoom) + "&remotemap=" + ",".join(generatedMaps)
+                     + "/&zoomlevels=" + str(max_zoom) + "&remotemap=" + ",".join(generatedMaps) \
+                     + "&points=" + ",".join(pointLayers)
         feedback.setProgressText("Copy the link above in any browser to see your maps online.")
         feedback.setProgressText(curMapsUrl)
         feedback.setProgress(100)
