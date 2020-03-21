@@ -267,7 +267,8 @@ class WMSCapabilities:
             if layerDefinitions is not None and isinstance(layerDefinitions, list) and len(layerDefinitions) > 0:
                 for curLayer in layerDefinitions:
                     for operation in WMSCapabilities.getOperationsListForCustomLayer(curLayer):
-                        allCustomLayers.append("GH:" + curLayer["Name"] + ":" + operation['attribute'] + ":" + operation['type'])
+                        allCustomLayers.append(curLayer["Name"] + ";" + operation['attribute'])
+                        #allCustomLayers.append(curLayer["Name"] + ":" + operation['attribute'] + ":" + operation['type'])
         return allCustomLayers
 
     @staticmethod

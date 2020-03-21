@@ -618,9 +618,11 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         feedback.pushConsoleInfo("Current published Maps:\n")
         generatedMaps = ["GH:" + UTILS.normalizeName(layer.name()) + ";" + layerAttr for layer in layers if not self.isPointLayer(layer)]
         pointLayers = ["GH:" + UTILS.normalizeName(layer.name()) for layer in layers if self.isPointLayer(layer)]
-        curMapsUrl = "https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl \
-                     + "/&zoomlevels=" + str(max_zoom) + "&remotemap=" + ",".join(generatedMaps) \
-                     + "&points=" + ",".join(pointLayers)
+        curMapsUrl = "https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl
+        if len(generatedMaps) > 0:
+            curMapsUrl += "/&zoomlevels=" + str(max_zoom) + + "&remotemap=" + ",".join(generatedMaps)
+        if len(pointLayers) > 0:
+            curMapsUrl += "&points=" + ",".join(pointLayers)
         feedback.setProgressText("Copy the link above in any browser to see your maps online.")
         feedback.setProgressText(curMapsUrl)
         feedback.setProgress(100)
