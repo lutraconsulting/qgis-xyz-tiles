@@ -157,7 +157,7 @@ class DirectoryWriter:
             path = os.path.join(path, operation)
         return path
 
-    def publishPointsLayer(self, feedback, layer, mapAttr, resultProj):
+    def processPointsLayer(self, feedback, layer, mapAttr, resultProj):
         feedback.setProgressText("Publishing map: " + UTILS.normalizeName(layer.name()))
         clonedLayer = layer.clone()
         layerRenderer = clonedLayer.renderer()
@@ -171,7 +171,7 @@ class DirectoryWriter:
         clonedLayer.addAttribute(iconField)
         clonedLayer.commitChanges()
         clonedLayer.startEditing()
-        feedback.setProgressText("Rendering each symbology")
+        feedback.setProgressText("Rendering symbologies")
         for feature in clonedLayer.getFeatures():
             layerRenderer.startRender(renderContext, clonedLayer.fields())
             symbol = layerRenderer.originalSymbolsForFeature(feature, renderContext)
@@ -193,7 +193,7 @@ class DirectoryWriter:
         clonedLayer.commitChanges()
 
         layerCsvFolder = self.getPathForMap(layer.name(), mapAttr, 'csv')
-        feedback.setProgressText("Export Vector to File "+ str(layerCsvFolder))
+        feedback.setProgressText("Saving results")
         os.makedirs(layerCsvFolder, exist_ok=True)
         savedCsv = QgsVectorFileWriter.writeAsVectorFormat(clonedLayer, os.path.join(layerCsvFolder, 'point_layer.csv'),
                                                 'utf-8', resultProj, 'CSV', layerOptions=['GEOMETRY=AS_XY'])
@@ -213,6 +213,9 @@ class DirectoryWriter:
         path = os.path.join(directory, filename)
         image.save(path, self.format, self.quality)
         return path
+
+    def write_custom_capabilities(self, layerTitle, layerAttr, operation):
+        WMSCapabilities.updateCustomXML(self.folder, layerTitle, layerAttr, operation)
 
     def write_capabilities(self, layer, layerTitle, layerAttr):#, extents, projection):
         WMSCapabilities.updateXML(self.folder, layer, layerTitle, layerAttr)#, extents, projection)
@@ -293,8 +296,8 @@ class DirectoryWriter:
         render.finished.connect(finished)
         render.start()
 
-    def getCapabilitiesPath(self):
-        return os.path.join(self.folder, "getCapabilities.xml")
+    # def getCapabilitiesPath(self):
+    #     return os.path.join(self.folder, "getCapabilities.xml")
 
     def writeLegendJson(self, layer, mapTitle, mapAttr, operation):
         mapTitle = UTILS.normalizeName(mapTitle)
@@ -464,7 +467,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         layerParam = QgsProcessingParameterMultipleLayers(
             self.LAYERS,
             self.tr('Maps to display online'),
-            QgsProcessing.TypeMapLayer
+            QgsProcessing.TypeMapLayer,
+            defaultValue=[layer.dataProvider().dataSourceUri(False) for layer in iface.mapCanvas().layers()]
         )
         layerParam.setMinimumNumberInputs(1)
         self.addParameter(layerParam)
@@ -568,21 +572,19 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         dest_crs = QgsCoordinateReferenceSystem('EPSG:3857')
         layers = self.parameterAsLayerList(parameters, self.LAYERS, context)
         metatilesCount = self.getTotalTiles(wgs_crs, min_zoom, max_zoom, layers)
+        #FIXME Dar um update e um push
         progress = 0
-        if self.parameterAsString(parameters, self.GIT_EXECUTABLE, context) and not GitHub.isOptionsOk(writer.folder, ghUser, ghRepository, feedback):
-            feedback.setProgressText("Error : Invalid repository selected")
-            return False
         for layer in layers:
+            layerTitle = layer.name()
             if self.isPointLayer(layer):
-                feedback.setProgressText("Publishing Point geometry")
-                if writer.publishPointsLayer(feedback, layer, layerAttr, wgs_crs):
-                    feedback.setProgressText("Map publishing sucessfully")
+                feedback.setProgressText("Publishing a shape of point geometry")
+                if writer.processPointsLayer(feedback, layer, layerAttr, wgs_crs):
+                    writer.write_custom_capabilities(layerTitle, layerAttr, "csv")
+                    #feedback.setProgressText("Map publishing sucessfully")
                 else:
                     feedback.setProgressText("Error publishing map")
             else:
                 #feedback.setProgressText("Operation: " + str(mapOperation))
-                feedback.setProgressText("Publishing other geometry")
-                layerTitle = layer.name()
                 feedback.setProgressText("Publishing map: " + layerTitle)
                 layerRenderSettings = self.createLayerRenderSettings(layer, dest_crs, outputFormat)
                 metatiles_by_zoom = self.createLayerMetatiles(wgs_crs, layer, min_zoom, max_zoom)
@@ -606,17 +608,16 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                 writer.writeThumbnail(UTILS.getMapExtent(layer, dest_crs), layerTitle, layerAttr, mapOperation.getName(), layerRenderSettings)
         feedback.pushConsoleInfo('Finished map tile generation.')
         createdTag = GitHub.publishTilesToGitHub(writer.folder, ghUser, ghRepository, feedback, ghPassword)
-        giturl = GitHub.getGitUrl(ghUser, ghRepository)
+        storeUrl = GitHub.getGitUrl(ghUser, ghRepository)
         #FIXME Space in the map name will cause errors.
-        storeUrl = giturl #+ "@" + createdTag + "/"
         feedback.pushConsoleInfo("All the maps in this repository:\n(Please only use maps with the same zoom level.)\n")
         allLayers = WMSCapabilities.getAllLayers(Path(os.path.join(writer.folder, "getCapabilities.xml")).read_text(), layerAttr)
+        allPointLayers = WMSCapabilities.getAllCustomLayers(Path(os.path.join(writer.folder, "getCapabilities.xml")).read_text(), layerAttr)
         feedback.pushConsoleInfo("https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl
-            + "/&zoomlevels="+str(max_zoom)
-            + "&remotemap=" + ",".join(allLayers) + "\n")
+            + "/&zoomlevels="+str(max_zoom) + "&remotemap=" + ",".join(allLayers) + "&points=" + ",".join(allPointLayers) + "\n")
         feedback.pushConsoleInfo("Current published Maps:\n")
         generatedMaps = ["GH:" + UTILS.normalizeName(layer.name()) + ";" + layerAttr for layer in layers if not self.isPointLayer(layer)]
-        pointLayers = [UTILS.normalizeName(layer.name()) for layer in layers if self.isPointLayer(layer)]
+        pointLayers = ["GH:" + UTILS.normalizeName(layer.name()) for layer in layers if self.isPointLayer(layer)]
         curMapsUrl = "https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl \
                      + "/&zoomlevels=" + str(max_zoom) + "&remotemap=" + ",".join(generatedMaps) \
                      + "&points=" + ",".join(pointLayers)
@@ -759,6 +760,13 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         if not self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context):
             feedback.pushConsoleInfo("Please specify your repository name.\nYou can create one at: https://github.com/new")
             return False
+        output_dir = self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context)
+        ghPassword = self.parameterAsString(parameters, self.GITHUB_PASS, context)
+        if self.parameterAsString(parameters, self.GIT_EXECUTABLE, context):
+            GitHub.prepareEnvironment(self.parameterAsString(parameters, self.GIT_EXECUTABLE, context))
+        if not GitHub.isOptionsOk(output_dir, curUser, ghPassword, gitRepository, feedback):
+            feedback.setProgressText("Error : Invalid repository selected")
+            return False
         OptionsCfg.write(
             self.parameterAsInt(parameters, self.ZOOM_MAX, context),
             self.parameterAsString(parameters, self.GIT_EXECUTABLE, context),
@@ -776,7 +784,6 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         if not output_dir:
             raise QgsProcessingException(self.tr('You need to specify output directory.'))
         writer = DirectoryWriter(output_dir, is_tms)
-        GitHub.prepareEnvironment(self.parameterAsString(parameters, self.GIT_EXECUTABLE, context))
         #raise GeoAlgorithmExecutionException (
         return self.generate(writer, parameters, context, feedback)
 

@@ -77,7 +77,7 @@ class GitHub:
             return False
 
     @staticmethod
-    def isOptionsOk(folder, user, repository, feedback):
+    def isOptionsOk(folder, user, password, repository, feedback):
         from git import Repo
         from git import InvalidGitRepositoryError
 
@@ -87,7 +87,7 @@ class GitHub:
         #     return False
 
         #Cria ou pega o repositório atual.
-        repo = None
+        repo = None #Danilo copia ou msma função do  getRepository
         if not os.path.exists(folder) or (os.path.exists(folder) and not os.listdir(folder)):
             repo = Repo.clone_from(GitHub.getGitUrl(user, repository), folder)
             assert (os.path.exists(folder))
@@ -105,19 +105,27 @@ class GitHub:
                 return False
 
         if repo.git.status("--porcelain"):
+            # if QMessageBox.question(None, "Local repository is not clean.", "Click 'YES' to commit the changes of your folder, otherwise click 'NO' to resolve it yourself.", defaultButton=QMessageBox.Yes) == QMessageBox.Yes:
+            #     feedback.pushConsoleInfo("Adding all files in folder")
+            #     GitHub.addFiles(repo, user, repository)
+            #     feedback.pushConsoleInfo("Adding all files in folder")
+            #     repo.git.commit(m="QGIS - Adding all files in folder " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+            #     feedback.pushConsoleInfo("QGIS - Sending changes to Github")
+            #     GitHub.pushChanges(repo, user, repository, password)
+            # else:
+            #Pode usar o | git clean -df | git checkout -- . pra descardar tbm
             feedback.pushConsoleInfo("Error: Local repository is not clean.\nPlease commit the changes made to local repository before run.\nUse: git add * and git commit -m \"MSG\"")
             return False
         return True
 
     @staticmethod
-    def publishTilesToGitHub(folder, user, repository, feedback, password=None):  # ghRepository, ghUser, ghPassphrase
+    def getRepository(folder, user, repository, feedback):
         from git import Repo
         from git import InvalidGitRepositoryError
 
-        feedback.pushConsoleInfo('Github found commiting to your account.')
 
         #Não está funcionando a validação
-        feedback.pushConsoleInfo(user + ' at ' + repository)
+        #feedback.pushConsoleInfo(user + ' at ' + repository)
         if not GitHub.existsRepository(user, repository):
             feedback.pushConsoleInfo("The repository " + repository + " doesn't exists.\nPlease create a new one at https://github.com/new .")
             return None
@@ -133,11 +141,10 @@ class GitHub:
             except InvalidGitRepositoryError:
                 feedback.pushConsoleInfo("The destination folder must be a repository or an empty folder.")
                 repo = Repo.init(folder, bare=False)
+        return repo
 
-        now = datetime.now()
-        # https://stackoverflow.com/questions/6565357/git-push-requires-username-and-password
-        repo.git.config("credential.helper", "store")
-        repo.git.config("--global", "credential.helper", "'cache --timeout 7200'")
+    @staticmethod
+    def tryPullRepository(repo, user, repository, feedback):
         try:
             feedback.pushConsoleInfo("Git: Pulling your repository current state.")
             repo.git.pull("-s recursive", "-X ours", GitHub.getGitUrl(user, repository), "master")
@@ -148,15 +155,32 @@ class GitHub:
         except:
             pass
 
+    @staticmethod
+    def addFiles(repo, user, repository):
         originName = "mappia"
-
         try:
             repo.git.remote("add", originName, GitHub.getGitUrl(user, repository))
         except:
             repo.git.remote("set-url", originName, GitHub.getGitUrl(user, repository))
-
-        feedback.pushConsoleInfo('Git: Add all generated tiles to your repository.')
         repo.git.add(all=True)  # Adiciona todos arquivos
+
+    @staticmethod
+    def pushChanges(repo, user, repository, password):
+        return repo.git.push(GitHub.getGitPassUrl(user, repository, password), "master:refs/heads/master")
+
+    @staticmethod
+    def publishTilesToGitHub(folder, user, repository, feedback, password=None):  # ghRepository, ghUser, ghPassphrase
+        feedback.pushConsoleInfo('Github found commiting to your account.')
+
+        repo = GitHub.getRepository(folder, user, repository, feedback)
+
+        now = datetime.now()
+        # https://stackoverflow.com/questions/6565357/git-push-requires-username-and-password
+        # repo.git.config("credential.helper", "store")
+        # repo.git.config("--global", "credential.helper", "'cache --timeout 7200'")
+        GitHub.tryPullRepository(repo, user, repository, feedback)
+        # feedback.pushConsoleInfo('Git: Add all generated tiles to your repository.')
+        GitHub.addFiles(repo, user, repository)
         #feedback.pushConsoleInfo("Git: Mergin.")
         #repo.git.merge("-s recursive", "-X ours")
         #feedback.pushConsoleInfo("Git: Pushing changes.")
@@ -170,7 +194,7 @@ class GitHub:
         # new_tag = repo.create_tag(tag, message='Automatic tag "{0}"'.format(tag))
         # repo.remotes[originName].push(new_tag)
         feedback.pushConsoleInfo("Git: Pushing modifications to remote repository.")
-        repo.git.push(GitHub.getGitPassUrl(user, repository, password), "master:refs/heads/master")
+        GitHub.pushChanges(repo, user, repository, password)
         return None
 
     @staticmethod

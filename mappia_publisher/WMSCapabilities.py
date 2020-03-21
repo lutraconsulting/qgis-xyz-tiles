@@ -2,8 +2,10 @@
 from . import xmltodict
 from .UTILS import UTILS
 from collections import OrderedDict
+from qgis.PyQt.QtWidgets import QMessageBox
 import collections
 from pathlib import Path
+import json
 import os
 import re
 
@@ -237,15 +239,112 @@ class WMSCapabilities:
         return allLayers
 
     @staticmethod
-    def updateXML(directory, layer, layerTitle, layerAttr):
-        extents = layer.extent()
-        xmlContent = ""
+    def getOperationsListForCustomLayer(docLayer):
+        #FIXME Não deveria modificar o input numa funcao de get
+        #FIXME codigo duplicado
+        if not "Operation" in docLayer:
+            docLayer["Operation"] = []
+        elif isinstance(docLayer["Operation"], collections.OrderedDict):
+            docLayer["Operation"] = [docLayer["Operation"]]
+
+        if len(docLayer["Operation"]) == 0:
+            return []
+        elif isinstance(docLayer["Operation"], str):
+            raise Exception(json.dumps(docLayer))
+        else:
+            return [{'type': operation["@type"], 'attribute': operation["#text"]} for operation in docLayer['Operation']]
+
+
+    @staticmethod
+    def getAllCustomLayers(content, layerAttr='1'):
+        doc = xmltodict.parse(content)
+        allCustomLayers = []
+        if 'CustomLayer'  in doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities']:
+            layerDefinitions = doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities']['CustomLayer']
+
+            if layerDefinitions is not None and isinstance(layerDefinitions, collections.OrderedDict):
+                layerDefinitions = [layerDefinitions]
+            if layerDefinitions is not None and isinstance(layerDefinitions, list) and len(layerDefinitions) > 0:
+                for curLayer in layerDefinitions:
+                    for operation in WMSCapabilities.getOperationsListForCustomLayer(curLayer):
+                        allCustomLayers.append("GH:" + curLayer["Name"] + ":" + operation['attribute'] + ":" + operation['type'])
+        return allCustomLayers
+
+    @staticmethod
+    def getCurrentCapabilitiesDoc(directory):
         capabilitiesPath = os.path.join(directory, "getCapabilities.xml")
         if os.path.isfile(capabilitiesPath):
             capabilitiesContent = Path(capabilitiesPath).read_text()
         else:
             capabilitiesContent = WMSCapabilities.getDefaultCapabilities()
         doc = xmltodict.parse(capabilitiesContent)
+        return doc
+
+    @staticmethod
+    def saveCurrentCapabilities(directory, doc):
+        capabilitiesPath = os.path.join(directory, "getCapabilities.xml")
+        Path(capabilitiesPath).write_text(xmltodict.unparse(doc, pretty=True))
+
+    @staticmethod
+    def getCustomLayerDefaultDefinition(layerName):
+        layerName = UTILS.normalizeName(layerName)
+        return xmltodict.parse("""<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+            <CONTENT>
+                <Name>GH:""" + layerName + """</Name>
+                <Title>"""+layerName +"""</Title>
+            </CONTENT>""")["CONTENT"]
+
+    #customDoc é um Dict vindo do xmltodict. layerAttr e operation são strings
+    @staticmethod
+    def addOperation(customDoc, layerAttr, operation):
+        layerAttr = UTILS.normalizeName(layerAttr)
+        if not "Operation" in customDoc:
+            customDoc["Operation"] = list()
+        if isinstance(customDoc["Operation"], collections.OrderedDict):
+            customDoc["Operation"] = [customDoc["Operation"]]
+
+        found = False
+        for curOperationDict in customDoc["Operation"]:
+            if not found and '@type' in curOperationDict and curOperationDict['@type'] == operation and curOperationDict['#text'] == layerAttr:
+                found = True
+        if not found:
+            customDoc['Operation'].append(xmltodict.parse("""<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+                            <CONTENT>
+                            <Operation type=\"""" + operation + """\">""" + layerAttr + """</Operation>
+                            </CONTENT>""")["CONTENT"]["Operation"])
+        return customDoc
+
+
+    @staticmethod
+    def updateCustomXML(directory, layerTitle, layerAttr, operation):
+        doc = WMSCapabilities.getCurrentCapabilitiesDoc(directory)
+        filename = UTILS.normalizeName(layerTitle)  # layer Name no qgis
+
+        if 'CustomLayer' in doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities']:
+            if type(doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities']["CustomLayer"]) is collections.OrderedDict:
+                curLayer = doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities']["CustomLayer"]
+                doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities']["CustomLayer"] = [curLayer]
+        else:
+            doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities']['CustomLayer'] = []
+
+        curLayerDefinition = None
+        if 'CustomLayer' in doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities']:
+            for iLayer in range(len(doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities']["CustomLayer"]) - 1, -1, -1):
+                curLayer = doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities']["CustomLayer"][iLayer]
+                if "Name" in curLayer and filename in curLayer["Name"]:
+                    doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities']["CustomLayer"].pop(iLayer)
+                    curLayerDefinition = curLayer
+                    #TODO verificar se não restaram outros com mesmo nome.
+        if curLayerDefinition is None:
+            curLayerDefinition = WMSCapabilities.getCustomLayerDefaultDefinition(filename)
+        WMSCapabilities.addOperation(curLayerDefinition, layerAttr, operation)
+        doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities']["CustomLayer"].append(curLayerDefinition)
+        WMSCapabilities.saveCurrentCapabilities(directory, doc)
+
+
+    @staticmethod
+    def updateXML(directory, layer, layerTitle, layerAttr):
+        doc = WMSCapabilities.getCurrentCapabilitiesDoc(directory)
 
         filename = UTILS.normalizeName(layerTitle) #layer Name no qgis
 
@@ -305,4 +404,4 @@ class WMSCapabilities:
                 'TileSet']  # Dois elementos c mesma chave representa com lista
         else:
             doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities'] = newTileSetDescription
-        Path(capabilitiesPath).write_text(xmltodict.unparse(doc, pretty=True))
+        WMSCapabilities.saveCurrentCapabilities(directory, doc)

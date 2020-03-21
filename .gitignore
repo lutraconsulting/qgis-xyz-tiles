@@ -6,3 +6,4 @@
 __pycache__/
 scripts/deploy.bat
 scripts/deploy.bat
+mappia_publisher/options.json

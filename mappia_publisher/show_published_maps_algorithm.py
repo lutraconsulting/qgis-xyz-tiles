@@ -82,7 +82,8 @@ class ShowPublishedMapsAlgorithm(QgsProcessingAlgorithm):
             options = OptionsCfg.read()
             if not options[OptionsCfg.ZOOM_MAX]:
                 options[OptionsCfg.ZOOM_MAX] = 7
-            mapsUrl = "https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl + "/&zoomlevels=" + str(options[OptionsCfg.ZOOM_MAX]) + "&remotemap=" + ",".join([layer + ";" + layerAttr for layer in foundMaps])
+            pointLayers = WMSCapabilities.getAllCustomLayers(capabilitiesTxt.text)
+            mapsUrl = "https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl + "/&zoomlevels=" + str(options[OptionsCfg.ZOOM_MAX]) + "&remotemap=" + ",".join([layer + ";" + layerAttr for layer in foundMaps]) + "&points=" + ",".join([layer + ";" + layerAttr for layer in pointLayers])
             feedback.pushConsoleInfo("The following maps were found into the repository \"" + storeUrl + "\":" + '\n'.join(foundMaps) + "\n---------")
             feedback.pushConsoleInfo(mapsUrl)
             webbrowser.open_new(mapsUrl)
@@ -90,7 +91,7 @@ class ShowPublishedMapsAlgorithm(QgsProcessingAlgorithm):
             feedback.pushConsoleInfo("Sorry, no map is shared from this repository.")
         else:
             feedback.pushConsoleInfo("Error: Please confirm the user or repository. ERROR response_code: " + str(capabilitiesTxt.status_code) + " response: " + str(capabilitiesTxt.text))
-        return {"MAPS": foundMaps, "SHAREABLE_URL": mapsUrl}
+        return {"MAPS": foundMaps, "PointVector": pointLayers, "SHAREABLE_URL": mapsUrl}
 
     def name(self):
         """
