@@ -6,8 +6,6 @@ import webbrowser
 import requests
 from datetime import datetime
 import json
-from git import Repo
-from git import InvalidGitRepositoryError
 from qgis.PyQt.QtWidgets import QMessageBox
 
 class GitHub:
@@ -121,7 +119,9 @@ class GitHub:
         return True
 
     @staticmethod
-    def getRepository(folder, user, repository, feedback):
+    def publishTilesToGitHub(folder, user, repository, feedback, password=None):  # ghRepository, ghUser, ghPassphrase
+        from git import Repo
+        from git import InvalidGitRepositoryError
 
 
         #Não está funcionando a validação
