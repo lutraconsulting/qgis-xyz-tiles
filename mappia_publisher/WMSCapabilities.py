@@ -134,6 +134,7 @@ class WMSCapabilities:
           <Format>application/vnd.ogc.se_inimage</Format>
         </Exception>
         <VendorSpecificCapabilities>
+          <notempty></notempty>
         </VendorSpecificCapabilities>
         <UserDefinedSymbolization SupportSLD="1" UserLayer="1" UserStyle="1" RemoteWFS="1"/>
         <Layer queryable="0" opaque="0" noSubsets="0">
@@ -229,13 +230,15 @@ class WMSCapabilities:
     def getAllLayers(content, layerAttr='1'):
         #FIXME should use the style name to identify the layer attributes
         doc = xmltodict.parse(content)
-        layerDefinitions = doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer']
-        if layerDefinitions is not None and isinstance(layerDefinitions, list) and len(layerDefinitions):
-            allLayers = [curLayer["Name"] for curLayer in layerDefinitions]
-        elif layerDefinitions is not None and isinstance(doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer'], collections.OrderedDict) and len(layerDefinitions):
-            allLayers = [layerDefinitions["Name"]]
-        else:
-            allLayers = []
+        allLayers = []
+        try:
+            layerDefinitions = doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer']
+            if layerDefinitions is not None and isinstance(layerDefinitions, list) and len(layerDefinitions):
+                allLayers = [curLayer["Name"] for curLayer in layerDefinitions]
+            elif layerDefinitions is not None and isinstance(doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer'], collections.OrderedDict) and len(layerDefinitions):
+                allLayers = [layerDefinitions["Name"]]
+        except KeyError as e:
+            pass
         return allLayers
 
     @staticmethod
