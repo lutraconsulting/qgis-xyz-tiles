@@ -6,6 +6,8 @@ import webbrowser
 import requests
 from datetime import datetime
 import json
+from time import sleep
+from .UTILS import UTILS
 from qgis.PyQt.QtWidgets import QMessageBox
 
 class GitHub:
@@ -77,7 +79,7 @@ class GitHub:
             return False
 
     @staticmethod
-    def isOptionsOk(folder, user, password, repository, feedback):
+    def isOptionsOk(folder, user, repository, feedback):
         from git import Repo
         from git import InvalidGitRepositoryError
 
@@ -119,31 +121,6 @@ class GitHub:
         return True
 
     @staticmethod
-    def publishTilesToGitHub(folder, user, repository, feedback, password=None):  # ghRepository, ghUser, ghPassphrase
-        from git import Repo
-        from git import InvalidGitRepositoryError
-
-
-        #Não está funcionando a validação
-        #feedback.pushConsoleInfo(user + ' at ' + repository)
-        if not GitHub.existsRepository(user, repository):
-            feedback.pushConsoleInfo("The repository " + repository + " doesn't exists.\nPlease create a new one at https://github.com/new .")
-            return None
-
-        #Cria ou pega o repositório atual.
-        repo = None
-        if not os.path.exists(folder) or os.path.exists(folder) and not os.listdir(folder):
-            repo = Repo.clone_from(GitHub.getGitUrl(user, repository), folder)
-            assert (os.path.exists(folder))
-        else:
-            try:
-                repo = Repo(folder)
-            except InvalidGitRepositoryError:
-                feedback.pushConsoleInfo("The destination folder must be a repository or an empty folder.")
-                repo = Repo.init(folder, bare=False)
-        return repo
-
-    @staticmethod
     def tryPullRepository(repo, user, repository, feedback):
         try:
             feedback.pushConsoleInfo("Git: Pulling your repository current state.")
@@ -154,6 +131,43 @@ class GitHub:
             repo.git.checkout("--ours")
         except:
             pass
+
+    @staticmethod
+    def createRepo(ghRepository, ghUser, ghPass):
+        payload = {
+            'name': ghRepository,
+            'description': 'Repository cointaining maps of the mappia publisher.',
+            'auto_init': 'true'
+        }
+        resp = requests.post('https://api.github.com/user/repos', auth=(ghUser, ghPass), data=json.dumps(payload))
+        if resp.status_code == 201:
+            sleep(1)
+            return True
+        else:
+            return False
+
+    @staticmethod
+    def getGitCredentials(curUser, curPass):
+        state = UTILS.randomString()
+        if (not curUser):
+            curUser = ''
+        if (curPass is None or not curPass or not curUser) or (GitHub.testLogin(curUser, curPass) == False and QMessageBox.question(
+                None, "Credentials required", "Please inform your credentials, could we open login link for you?") == QMessageBox.Yes):
+            url = 'https://github.com/login/oauth/authorize?redirect_uri=https://csr.ufmg.br/imagery/get_key.php&client_id=10b28a388b0e66e87cee&login=' + curUser + '&scope=user%20repo&state=' + state
+            credentials = GitHub.getCredentials(state)
+            while not credentials:
+                webbrowser.open_new(url)
+                sleep(1)
+                response = QMessageBox.question(None, "Waiting credentials validation",
+                    "Click 'YES' to continue or 'NO' to cancel.")
+                if (response != QMessageBox.Yes):
+                    return (None, None)
+
+                credentials = GitHub.getCredentials(state)
+                if response == QMessageBox.Yes and not credentials:
+                    webbrowser.open_new(url)
+            return (credentials['user'], credentials['token'])
+        return (curUser, curPass)
 
     @staticmethod
     def addFiles(repo, user, repository):
@@ -169,6 +183,31 @@ class GitHub:
         return repo.git.push(GitHub.getGitPassUrl(user, repository, password), "master:refs/heads/master")
 
     @staticmethod
+    def getRepository(folder, user, repository, feedback):
+        from git import Repo
+        from git import InvalidGitRepositoryError
+
+
+        # #Não está funcionando a validação #FIXME Repository creation verification is not working (Modify the create Repo function to verify the creation)
+        # #feedback.pushConsoleInfo(user + ' at ' + repository)
+        # if not GitHub.existsRepository(user, repository):
+        #     feedback.pushConsoleInfo("The repository " + repository + " doesn't exists.\nPlease create a new one at https://github.com/new .")
+        #     return None
+
+        #Cria ou pega o repositório atual.
+        repo = None
+        if not os.path.exists(folder) or os.path.exists(folder) and not os.listdir(folder):
+            repo = Repo.clone_from(GitHub.getGitUrl(user, repository), folder)
+            assert (os.path.exists(folder))
+        else:
+            try:
+                repo = Repo(folder)
+            except InvalidGitRepositoryError:
+                feedback.pushConsoleInfo("The destination folder must be a repository or an empty folder.")
+                repo = Repo.init(folder, bare=False)
+        return repo
+
+    @staticmethod
     def publishTilesToGitHub(folder, user, repository, feedback, password=None):  # ghRepository, ghUser, ghPassphrase
         feedback.pushConsoleInfo('Github found commiting to your account.')
 
@@ -176,8 +215,7 @@ class GitHub:
 
         now = datetime.now()
         # https://stackoverflow.com/questions/6565357/git-push-requires-username-and-password
-        # repo.git.config("credential.helper", "store")
-        # repo.git.config("--global", "credential.helper", "'cache --timeout 7200'")
+        repo.git.config("credential.helper", "cache")
         GitHub.tryPullRepository(repo, user, repository, feedback)
         # feedback.pushConsoleInfo('Git: Add all generated tiles to your repository.')
         GitHub.addFiles(repo, user, repository)

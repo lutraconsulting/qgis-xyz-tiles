@@ -1,5 +1,5 @@
 
-set OSGEO=C:\OSGeo4W64
+set OSGEO=F:\Danilo\Programas\QGIS_34_15
 set PATH=%OSGEO%\apps\Python37\Scripts\;%PATH%
 SET OSGEO4W_ROOT=%OSGEO%
 call "%OSGEO4W_ROOT%"\bin\o4w_env.bat

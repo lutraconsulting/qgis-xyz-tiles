@@ -39,7 +39,6 @@ from pathlib import Path
 import platform
 import requests
 import webbrowser
-from time import sleep
 import tempfile
 import subprocess
 from .WMSCapabilities import WMSCapabilities
@@ -217,8 +216,8 @@ class DirectoryWriter:
     def write_custom_capabilities(self, layerTitle, layerAttr, operation):
         WMSCapabilities.updateCustomXML(self.folder, layerTitle, layerAttr, operation)
 
-    def write_capabilities(self, layer, layerTitle, layerAttr):#, extents, projection):
-        WMSCapabilities.updateXML(self.folder, layer, layerTitle, layerAttr)#, extents, projection)
+    def write_capabilities(self, layer, layerTitle, layerAttr):
+        WMSCapabilities.updateXML(self.folder, layer, layerTitle, layerAttr)
 
     def write_description(self, layerTitle, layerAttr, cellTypeName, nullValue, operation):
         layerTitle = UTILS.normalizeName(layerTitle)
@@ -463,7 +462,6 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
         # We add the input vector features source. It can have any kind of
         # geometry.
-
         layerParam = QgsProcessingParameterMultipleLayers(
             self.LAYERS,
             self.tr('Maps to display online'),
@@ -548,7 +546,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         return total
 
     def preprocessParameters(self, parameters):
-        parameters[self.GITHUB_USER], parameters[self.GITHUB_PASS] = self.getGitCredentials(parameters[self.GITHUB_USER], parameters[self.GITHUB_PASS])
+        parameters[self.GITHUB_USER], parameters[self.GITHUB_PASS] = GitHub.getGitCredentials(parameters[self.GITHUB_USER], parameters[self.GITHUB_PASS])
         if (parameters[self.GITHUB_USER] and parameters[self.GITHUB_PASS]):
             parameters[self.GIT_EXECUTABLE] = self.getGitExe(parameters[self.GIT_EXECUTABLE])
         return parameters
@@ -680,43 +678,6 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             gitExe = install_git()
         return gitExe
 
-    def getGitCredentials(self, curUser, curPass):
-        state = UTILS.randomString()
-        if (not curUser):
-            curUser = ''
-        if (curPass is None or not curPass or not curUser) or (GitHub.testLogin(curUser, curPass) == False and QMessageBox.question(
-                None, "Credentials required", "Please inform your credentials, could we open login link for you?") == QMessageBox.Yes):
-            url = 'https://github.com/login/oauth/authorize?redirect_uri=https://csr.ufmg.br/imagery/get_key.php&client_id=10b28a388b0e66e87cee&login=' + curUser + '&scope=user%20repo&state=' + state
-            credentials = GitHub.getCredentials(state)
-            while not credentials:
-                webbrowser.open_new(url)
-                sleep(1)
-                response = QMessageBox.question(None, "Waiting credentials validation",
-                    "Click 'YES' to continue or 'NO' to cancel.")
-                if (response != QMessageBox.Yes):
-                    return (None, None)
-
-                credentials = GitHub.getCredentials(state)
-                if response == QMessageBox.Yes and not credentials:
-                    webbrowser.open_new(url)
-            return (credentials['user'], credentials['token'])
-        return (curUser, curPass)
-
-    def createRepo(self, parameters, context):
-        payload = {
-            'name': self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context),
-            'description': 'Repository cointaining maps of the mappia publisher.',
-            'auto_init': 'true'
-        }
-        token = self.parameterAsString(parameters, self.GITHUB_PASS, context)
-        curUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
-        resp = requests.post('https://api.github.com/user/repos', auth=(curUser, token), data=json.dumps(payload))
-        if resp.status_code == 201:
-            sleep(1)
-            return True
-        else:
-            return False
-
 
     def checkParameterValues(self, parameters, context):
         min_zoom = 0
@@ -738,6 +699,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     def prepareAlgorithm(self, parameters, context, feedback):
         curUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
         gitRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
+        ghPassword = self.parameterAsString(parameters, self.GITHUB_PASS, context)
         if not GitHub.existsRepository(curUser, gitRepository) and QMessageBox.Yes != QMessageBox.question(
                 None,
                 "Repository not found",
@@ -746,7 +708,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                 buttons=(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)):
             feedback.pushConsoleInfo("Error: A valid repository is needed please enter a valid repository name or create a new one.")
             return False
-        elif not GitHub.existsRepository(curUser, gitRepository) and not self.createRepo(parameters, context):
+        elif not GitHub.existsRepository(curUser, gitRepository) and not GitHub.createRepo(gitRepository, curUser, ghPassword):
             if QMessageBox.question(
                     None,
                     "The creation have failed. Want to open the link https://github.com/new to create a new repository?",
@@ -763,10 +725,9 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             feedback.pushConsoleInfo("Please specify your repository name.\nYou can create one at: https://github.com/new")
             return False
         output_dir = self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context)
-        ghPassword = self.parameterAsString(parameters, self.GITHUB_PASS, context)
         if self.parameterAsString(parameters, self.GIT_EXECUTABLE, context):
             GitHub.prepareEnvironment(self.parameterAsString(parameters, self.GIT_EXECUTABLE, context))
-        if not GitHub.isOptionsOk(output_dir, curUser, ghPassword, gitRepository, feedback):
+        if not GitHub.isOptionsOk(output_dir, curUser, gitRepository, feedback):
             feedback.setProgressText("Error : Invalid repository selected")
             return False
         OptionsCfg.write(
