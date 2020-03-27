@@ -1,7 +1,5 @@
 from .OptionsCfg import OptionsCfg
-from http import HTTPStatus
-from urllib.parse import urlencode
-import requests
+from .UTILS import UTILS
 from qgis.PyQt.QtCore import QCoreApplication
 from qgis.core import (QgsProject,
                        QgsLogger,
@@ -84,14 +82,7 @@ class ReportRequestAlgorithm(QgsProcessingAlgorithm):
             'report': self.parameterAsString(parameters, self.REPORT, context),
             'reason': self.parameterAsString(parameters, self.REASON, context)
         }
-        return {"Response": self.sendReport(dictParam)}
-
-    def sendReport(self, dictParam):
-        req = requests.get(url='http://csr.ufmg.br/imagery/save_reports.php?' + urlencode(dictParam))
-        if req.status_code == HTTPStatus.OK:
-            return req.text
-        else:
-            return ''
+        return {"Response": UTILS.sendReport(dictParam)}
 
     def name(self):
         """

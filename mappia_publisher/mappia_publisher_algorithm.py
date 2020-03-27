@@ -32,6 +32,7 @@ __revision__ = '$Format:%H$'
 
 import math
 import os
+import traceback
 import csv
 import io
 import json
@@ -352,8 +353,8 @@ class OperationType(Enum):
 
 def install_git():
     def userConfirmed():
-        return QMessageBox.Yes == QMessageBox.question(None, "Git not automatically identified.",
-                             "Click 'Yes' to automatically download extract and use the git executable, otherwise please find the executable manually.",
+        return QMessageBox.Yes == QMessageBox.question(None, "Required GIT executable was not found",
+                             "Click 'YES' to start download and continue, otherwise please select the executable manually.",
                              defaultButton=QMessageBox.Yes,
                              buttons=(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel))
 
@@ -368,12 +369,11 @@ def install_git():
                 for chunk in r.iter_content(chunk_size=8192):
                     if chunk:  # filter out keep-alive new chunks
                         f.write(chunk)
-                        # f.flush()
         return local_filename
 
     tmpDir = tempfile.mkdtemp()
-    #with tempfile.TemporaryDirectory() as tmpDir:
     gitUrl = "https://github.com/git-for-windows/git/releases/download/v2.25.1.windows.1/PortableGit-2.25.1-64-bit.7z.exe"
+    QMessageBox.information(None, "Starting GIT download", "This step will take some time, it depends on your internet speed.\nClick 'OK' to continue.", defaultButton=QMessageBox.Ok, buttons=QMessageBox.Ok)
     selfExtractor = download_file(gitUrl, tmpDir)
     portableGit = os.path.join(tmpDir, "portablegit")
     if (not os.path.isfile(selfExtractor)):
@@ -417,6 +417,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     # Default size of the WMS tiles.
     WIDTH = 256
     HEIGHT = 256
+
+    version = '2.0.5'
 
     found_git = ''
 
@@ -465,12 +467,12 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         layerParam = QgsProcessingParameterMultipleLayers(
             self.LAYERS,
             self.tr('Maps to display online'),
-            QgsProcessing.TypeMapLayer,
-            defaultValue=[layer.dataProvider().dataSourceUri(False) for layer in iface.mapCanvas().layers()]
+            QgsProcessing.TypeMapLayer
+            #, defaultValue=[layer.id() for layer in iface.mapCanvas().layers()]#[layer.dataProvider().dataSourceUri(False) for layer in iface.mapCanvas().layers()]
         )
         layerParam.setMinimumNumberInputs(1)
         self.addParameter(layerParam)
-
+        self.m_layerParam = layerParam
 
         maxZoomParameter = QgsProcessingParameterNumber(
             self.ZOOM_MAX,
@@ -574,16 +576,15 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         progress = 0
         for layer in layers:
             layerTitle = layer.name()
+            feedback.setProgressText("Publishing layer: " + layerTitle)
             if self.isPointLayer(layer):
                 feedback.setProgressText("Publishing a shape of point geometry")
                 if writer.processPointsLayer(feedback, layer, layerAttr, wgs_crs):
                     writer.write_custom_capabilities(layerTitle, layerAttr, "csv")
-                    #feedback.setProgressText("Map publishing sucessfully")
                 else:
                     feedback.setProgressText("Error publishing map")
             else:
-                #feedback.setProgressText("Operation: " + str(mapOperation))
-                feedback.setProgressText("Publishing map: " + layerTitle)
+                feedback.setProgressText("Generating tiles to publish online")
                 layerRenderSettings = self.createLayerRenderSettings(layer, dest_crs, outputFormat)
                 metatiles_by_zoom = self.createLayerMetatiles(wgs_crs, layer, min_zoom, max_zoom)
                 for zoom in range(min_zoom, max_zoom + 1):
@@ -604,8 +605,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                 writer.write_capabilities(layer, layerTitle, layerAttr)
                 writer.writeLegendJson(layer, layerTitle, layerAttr, mapOperation.getName())
                 writer.writeThumbnail(UTILS.getMapExtent(layer, dest_crs), layerTitle, layerAttr, mapOperation.getName(), layerRenderSettings)
-        feedback.pushConsoleInfo('Finished map tile generation.')
-        createdTag = GitHub.publishTilesToGitHub(writer.folder, ghUser, ghRepository, feedback, ghPassword)
+        feedback.setProgressText('Finished map tile generation. Uploading changes to Github.')
+        GitHub.publishTilesToGitHub(writer.folder, ghUser, ghRepository, feedback, ghPassword)
         storeUrl = GitHub.getGitUrl(ghUser, ghRepository)
         #FIXME Space in the map name will cause errors.
         feedback.pushConsoleInfo("All the maps in this repository:\n(Please only use maps with the same zoom level.)\n")
@@ -622,7 +623,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         if len(pointLayers) > 0:
             curMapsUrl += "&points=" + ",".join(pointLayers)
         feedback.setProgressText("Copy the link above in any browser to see your maps online. ")
-        feedback.setProgressText(curMapsUrl)
+        feedback.pushConsoleInfo(curMapsUrl)
         feedback.setProgress(100)
         writer.close()
         webbrowser.open_new(curMapsUrl)
@@ -697,6 +698,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
 
     def prepareAlgorithm(self, parameters, context, feedback):
+        feedback.pushConsoleInfo("Started: Verify the input options.")
         curUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
         gitRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
         ghPassword = self.parameterAsString(parameters, self.GITHUB_PASS, context)
@@ -727,8 +729,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         output_dir = self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context)
         if self.parameterAsString(parameters, self.GIT_EXECUTABLE, context):
             GitHub.prepareEnvironment(self.parameterAsString(parameters, self.GIT_EXECUTABLE, context))
-        if not GitHub.isOptionsOk(output_dir, curUser, gitRepository, feedback):
-            feedback.setProgressText("Error : Invalid repository selected")
+        if not GitHub.isOptionsOk(output_dir, curUser, gitRepository, feedback, ghPassword):
+            feedback.setProgressText("Error: Canceling the execution, please select another output folder.")
             return False
         OptionsCfg.write(
             self.parameterAsInt(parameters, self.ZOOM_MAX, context),
@@ -747,8 +749,14 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         if not output_dir:
             raise QgsProcessingException(self.tr('You need to specify output directory.'))
         writer = DirectoryWriter(output_dir, is_tms)
-        #raise GeoAlgorithmExecutionException (
-        return self.generate(writer, parameters, context, feedback)
+        feedback.pushConsoleInfo("Ok, all inputs are valid.")
+        try:
+            return self.generate(writer, parameters, context, feedback)
+        except Exception as e:
+            reportContent = {'Status': 'Error, publication failed! Reporting error to Mappia development team.', 'version' : self.version, 'error': traceback.format_exc(), 'exception': str(e), 'os': platform.platform()}
+            UTILS.sendReport(reportContent)
+            feedback.pushConsoleInfo('Error, publication failed! Reporting error to Mappia development team.')
+            raise
 
     def name(self):
         """

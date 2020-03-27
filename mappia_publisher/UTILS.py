@@ -3,6 +3,9 @@ import re
 import math
 import os
 import unicodedata
+from http import HTTPStatus
+from urllib.parse import urlencode
+import requests
 from xml.sax.saxutils import escape
 from qgis.core import (QgsProject, QgsCoordinateTransform, QgsMessageLog)
 
@@ -36,6 +39,13 @@ class UTILS:
         letters = string.ascii_lowercase
         return ''.join(random.choice(letters) for i in range(stringLength))
 
+    @staticmethod
+    def sendReport(dictParam):
+        req = requests.get(url='http://csr.ufmg.br/imagery/save_reports.php?' + urlencode(dictParam))
+        if req.status_code == HTTPStatus.OK:
+            return req.text
+        else:
+            return ''
 
     #Return the map extents in the given projection
     @staticmethod

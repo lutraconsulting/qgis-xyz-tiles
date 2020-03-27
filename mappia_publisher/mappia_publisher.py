@@ -89,7 +89,7 @@ class MappiaPublisherPlugin(object):
         processing.execAlgorithmDialog("mappia:Report")
 
     def publishCallback(self):
-        processing.execAlgorithmDialog("mappia:Share")
+        processing.execAlgorithmDialog("mappia:Share", {'LAYERS': [layer.dataProvider().dataSourceUri(False) for layer in iface.mapCanvas().layers()]})
 
     def viewMapsCallback(self):
         processing.execAlgorithmDialog("mappia:View")

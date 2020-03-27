@@ -79,14 +79,9 @@ class GitHub:
             return False
 
     @staticmethod
-    def isOptionsOk(folder, user, repository, feedback):
+    def isOptionsOk(folder, user, repository, feedback, ghPassword=None):
         from git import Repo
         from git import InvalidGitRepositoryError
-
-        #feedback.pushConsoleInfo('Github found commiting to your account.')
-        # if not GitHub.existsRepository(user, repository):
-        #     feedback.pushConsoleInfo("The repository " + repository + " doesn't exists.\nPlease create a new one at https://github.com/new .")
-        #     return False
 
         #Cria ou pega o repositório atual.
         repo = None #Danilo copia ou msma função do  getRepository
@@ -107,17 +102,23 @@ class GitHub:
                 return False
 
         if repo.git.status("--porcelain"):
-            # if QMessageBox.question(None, "Local repository is not clean.", "Click 'YES' to commit the changes of your folder, otherwise click 'NO' to resolve it yourself.", defaultButton=QMessageBox.Yes) == QMessageBox.Yes:
-            #     feedback.pushConsoleInfo("Adding all files in folder")
-            #     GitHub.addFiles(repo, user, repository)
-            #     feedback.pushConsoleInfo("Adding all files in folder")
-            #     repo.git.commit(m="QGIS - Adding all files in folder " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
-            #     feedback.pushConsoleInfo("QGIS - Sending changes to Github")
-            #     GitHub.pushChanges(repo, user, repository, password)
-            # else:
-            #Pode usar o | git clean -df | git checkout -- . pra descardar tbm
-            feedback.pushConsoleInfo("Error: Local repository is not clean.\nPlease commit the changes made to local repository before run.\nUse: git add * and git commit -m \"MSG\"")
-            return False
+            response = QMessageBox.question(None, "Local repository is not clean.",
+                                 "The folder have local changes, we need to fix to continue.\nClick 'DISCARD' to discard changes, 'YES' to commit changes, otherwise click 'CANCEL' to cancel and resolve manually.",
+                                 buttons=(QMessageBox.Discard | QMessageBox.Yes | QMessageBox.Cancel),
+                                 defaultButton=QMessageBox.Discard)
+            if response == QMessageBox.Yes:
+                feedback.pushConsoleInfo("Adding all files in folder")
+                GitHub.addFiles(repo, user, repository)
+                feedback.pushConsoleInfo("Adding all files in folder")
+                repo.git.commit(m="QGIS - Adding all files in folder " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+                feedback.pushConsoleInfo("QGIS - Sending changes to Github")
+                GitHub.pushChanges(repo, user, repository, ghPassword)
+            elif response == QMessageBox.Discard:
+                repo.git.clean("-df")
+                repo.git.checkout('--', '.')
+            else:
+                feedback.pushConsoleInfo("Error: Local repository is not clean.\nPlease commit the changes made to local repository before run.\nUse: git add * and git commit -m \"MSG\"")
+                return False
         return True
 
     @staticmethod
@@ -223,8 +224,9 @@ class GitHub:
         #repo.git.merge("-s recursive", "-X ours")
         #feedback.pushConsoleInfo("Git: Pushing changes.")
         #repo.git.push(GitHub.getGitUrl(user, repository), "master:refs/heads/master")
-        if repo.index.diff(None) or repo.untracked_files:
+        if (not repo.index.diff(None) and not repo.untracked_files):
             feedback.pushConsoleInfo("No changes, nothing to commit.")
+            return None
         feedback.pushConsoleInfo("Git: Committing changes.")
         repo.git.commit(m="QGIS - " + now.strftime("%d/%m/%Y %H:%M:%S"))
         # feedback.pushConsoleInfo("CREATING TAG")
