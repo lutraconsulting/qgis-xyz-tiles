@@ -53,7 +53,7 @@ class GitHub:
     def getGitPassUrl(user, repository, password):
         if password is None or not password:
             return GitHub.getGitUrl(user, repository)
-        return "https://" + user + ":" + password + "@github.com/" + user + "/" + repository + ".git"
+        return "https://" + user + ":" + password + "@github.com/" + user + "/" + repository + "/"
 
     @staticmethod
     def lsremote(url):
@@ -79,15 +79,28 @@ class GitHub:
             return False
 
     @staticmethod
-    def isOptionsOk(folder, user, repository, feedback, ghPassword=None):
+    def configUser(repo, user):
+        repo.git.config("user.email", user)
+        repo.git.config("user.name", user)
+
+    @staticmethod
+    def getRepository(folder, user, repository, feedback):
         from git import Repo
         from git import InvalidGitRepositoryError
 
+
+        # #Não está funcionando a validação #FIXME Repository creation verification is not working (Modify the create Repo function to verify the creation)
+        # #feedback.pushConsoleInfo(user + ' at ' + repository)
+        # if not GitHub.existsRepository(user, repository):
+        #     feedback.pushConsoleInfo("The repository " + repository + " doesn't exists.\nPlease create a new one at https://github.com/new .")
+        #     return None
+
         #Cria ou pega o repositório atual.
-        repo = None #Danilo copia ou msma função do  getRepository
+        repo = None
         if not os.path.exists(folder) or (os.path.exists(folder) and not os.listdir(folder)):
-            repo = Repo.clone_from(GitHub.getGitUrl(user, repository), folder)
+            repo = Repo.clone_from(GitHub.getGitUrl(user, repository), folder, recursive=True)
             assert (os.path.exists(folder))
+            assert(repo)
         else:
             try:
                 repo = Repo(folder)
@@ -96,11 +109,16 @@ class GitHub:
                 if repoUrl and not (expectedUrl in re.compile("[\\n\\t ]").split(repoUrl)):
                     feedback.pushConsoleInfo("Your remote URL " + repoUrl + " does not match the expected url " + expectedUrl)
                     return False
-            except InvalidGitRepositoryError:
-                feedback.pushConsoleInfo("The destination folder must be a repository or an empty folder.")
+            except InvalidGitRepositoryError as e:
+                feedback.pushConsoleInfo("The destination folder must be a repository or an empty folder. Reason: " + str(e))
                 #repo = Repo.init(folder, bare=False)
-                return False
+        return repo
 
+    @staticmethod
+    def isOptionsOk(folder, user, repository, feedback, ghPassword=None):
+        #Cria ou pega o repositório atual.
+        repo = GitHub.getRepository(folder, user, repository, feedback)
+        GitHub.configUser(repo, user)
         if repo.git.status("--porcelain"):
             response = QMessageBox.question(None, "Local repository is not clean.",
                                  "The folder have local changes, we need to fix to continue.\nClick 'DISCARD' to discard changes, 'YES' to commit changes, otherwise click 'CANCEL' to cancel and resolve manually.",
@@ -123,6 +141,7 @@ class GitHub:
 
     @staticmethod
     def tryPullRepository(repo, user, repository, feedback):
+        GitHub.configUser(repo, user)
         try:
             feedback.pushConsoleInfo("Git: Pulling your repository current state.")
             repo.git.pull("-s recursive", "-X ours", GitHub.getGitUrl(user, repository), "master")
@@ -138,6 +157,7 @@ class GitHub:
         payload = {
             'name': ghRepository,
             'description': 'Repository cointaining maps of the mappia publisher.',
+            'branch': 'master',
             'auto_init': 'true'
         }
         resp = requests.post('https://api.github.com/user/repos', auth=(ghUser, ghPass), data=json.dumps(payload))
@@ -154,10 +174,10 @@ class GitHub:
             curUser = ''
         if (curPass is None or not curPass or not curUser) or (GitHub.testLogin(curUser, curPass) == False and QMessageBox.question(
                 None, "Credentials required", "Please inform your credentials, could we open login link for you?") == QMessageBox.Yes):
-            url = 'https://github.com/login/oauth/authorize?redirect_uri=https://csr.ufmg.br/imagery/get_key.php&client_id=10b28a388b0e66e87cee&login=' + curUser + '&scope=user%20repo&state=' + state
+            url = 'https://github.com/login/oauth/authorize?redirect_uri=https://csr.ufmg.br/imagery/get_key.php&client_id=10b28a388b0e66e87cee&login=' + curUser + '&scope=read:user%20repo&state=' + state
             credentials = GitHub.getCredentials(state)
+            webbrowser.open(url, 1)
             while not credentials:
-                webbrowser.open_new(url)
                 sleep(1)
                 response = QMessageBox.question(None, "Waiting credentials validation",
                     "Click 'YES' to continue or 'NO' to cancel.")
@@ -166,7 +186,7 @@ class GitHub:
 
                 credentials = GitHub.getCredentials(state)
                 if response == QMessageBox.Yes and not credentials:
-                    webbrowser.open_new(url)
+                    webbrowser.open(url, 2)
             return (credentials['user'], credentials['token'])
         return (curUser, curPass)
 
@@ -184,47 +204,22 @@ class GitHub:
         return repo.git.push(GitHub.getGitPassUrl(user, repository, password), "master:refs/heads/master")
 
     @staticmethod
-    def getRepository(folder, user, repository, feedback):
-        from git import Repo
-        from git import InvalidGitRepositoryError
-
-
-        # #Não está funcionando a validação #FIXME Repository creation verification is not working (Modify the create Repo function to verify the creation)
-        # #feedback.pushConsoleInfo(user + ' at ' + repository)
-        # if not GitHub.existsRepository(user, repository):
-        #     feedback.pushConsoleInfo("The repository " + repository + " doesn't exists.\nPlease create a new one at https://github.com/new .")
-        #     return None
-
-        #Cria ou pega o repositório atual.
-        repo = None
-        if not os.path.exists(folder) or os.path.exists(folder) and not os.listdir(folder):
-            repo = Repo.clone_from(GitHub.getGitUrl(user, repository), folder)
-            assert (os.path.exists(folder))
-        else:
-            try:
-                repo = Repo(folder)
-            except InvalidGitRepositoryError:
-                feedback.pushConsoleInfo("The destination folder must be a repository or an empty folder.")
-                repo = Repo.init(folder, bare=False)
-        return repo
-
-    @staticmethod
-    def publishTilesToGitHub(folder, user, repository, feedback, password=None):  # ghRepository, ghUser, ghPassphrase
+    def publishTilesToGitHub(folder, user, repository, feedback, password=None):
         feedback.pushConsoleInfo('Github found commiting to your account.')
 
         repo = GitHub.getRepository(folder, user, repository, feedback)
 
         now = datetime.now()
         # https://stackoverflow.com/questions/6565357/git-push-requires-username-and-password
-        repo.git.config("credential.helper", "cache")
-        GitHub.tryPullRepository(repo, user, repository, feedback)
-        # feedback.pushConsoleInfo('Git: Add all generated tiles to your repository.')
+        repo.git.config("credential.helper", " ", "store")
+        GitHub.tryPullRepository(repo, user, repository, feedback) #Danilo
+        feedback.pushConsoleInfo('Git: Add all generated tiles to your repository.')
         GitHub.addFiles(repo, user, repository)
         #feedback.pushConsoleInfo("Git: Mergin.")
         #repo.git.merge("-s recursive", "-X ours")
         #feedback.pushConsoleInfo("Git: Pushing changes.")
         #repo.git.push(GitHub.getGitUrl(user, repository), "master:refs/heads/master")
-        if (not repo.index.diff(None) and not repo.untracked_files):
+        if repo.index.diff(None) or repo.untracked_files:
             feedback.pushConsoleInfo("No changes, nothing to commit.")
             return None
         feedback.pushConsoleInfo("Git: Committing changes.")

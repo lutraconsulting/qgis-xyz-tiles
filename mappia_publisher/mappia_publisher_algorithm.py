@@ -286,18 +286,14 @@ class DirectoryWriter:
         options.setBackgroundColor(QColor(255, 128, 255))
         options.setOutputSize(QSize(60, 60))
         options.setExtent(layer.extent())
-        render = QgsMapRendererParallelJob(options)
-
-        def finished():
-            img = render.renderedImage()
+        qgisRenderJob = QgsMapRendererParallelJob(options)
+        def savePng():
+            img = qgisRenderJob.renderedImage()
             # save the image; e.g. img.save("/Users/myuser/render.png","png")
             img.save(os.path.join(legendFolder, "legend.png"), "png")
             print("saved")
-        render.finished.connect(finished)
-        render.start()
-
-    # def getCapabilitiesPath(self):
-    #     return os.path.join(self.folder, "getCapabilities.xml")
+        qgisRenderJob.finished.connect(savePng)
+        qgisRenderJob.start()
 
     def writeLegendJson(self, layer, mapTitle, mapAttr, operation):
         mapTitle = UTILS.normalizeName(mapTitle)
@@ -417,6 +413,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     # Default size of the WMS tiles.
     WIDTH = 256
     HEIGHT = 256
+
+    OUTPUT_DIR_TMP = None
 
     version = '2.0.5'
 
@@ -600,7 +598,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                             writer.write_tile(tile, tile_img, mapOperation.getName(), layerTitle, layerAttr)
                         progress = progress + 1
                         feedback.setProgress(98 * (progress / metatilesCount))
-                writer.writeLegendPng(layer, layerTitle, layerAttr, mapOperation.getName())
+                # writer.writeLegendPng(layer, layerTitle, layerAttr, mapOperation.getName())
                 writer.write_description(layerTitle, layerAttr, cellType, nullValue, mapOperation.getName())
                 writer.write_capabilities(layer, layerTitle, layerAttr)
                 writer.writeLegendJson(layer, layerTitle, layerAttr, mapOperation.getName())
@@ -702,6 +700,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         curUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
         gitRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
         ghPassword = self.parameterAsString(parameters, self.GITHUB_PASS, context)
+        self.OUTPUT_DIR_TMP = self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context)
         if not GitHub.existsRepository(curUser, gitRepository) and QMessageBox.Yes != QMessageBox.question(
                 None,
                 "Repository not found",
@@ -726,10 +725,9 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         if not self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context):
             feedback.pushConsoleInfo("Please specify your repository name.\nYou can create one at: https://github.com/new")
             return False
-        output_dir = self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context)
         if self.parameterAsString(parameters, self.GIT_EXECUTABLE, context):
             GitHub.prepareEnvironment(self.parameterAsString(parameters, self.GIT_EXECUTABLE, context))
-        if not GitHub.isOptionsOk(output_dir, curUser, gitRepository, feedback, ghPassword):
+        if not GitHub.isOptionsOk(self.OUTPUT_DIR_TMP, curUser, gitRepository, feedback, ghPassword):
             feedback.setProgressText("Error: Canceling the execution, please select another output folder.")
             return False
         OptionsCfg.write(
@@ -738,17 +736,16 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             self.parameterAsString(parameters, self.LAYER_ATTRIBUTE, context),
             self.parameterAsString(parameters, self.GITHUB_USER, context),
             self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context),
-            self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context),
+            self.OUTPUT_DIR_TMP,
             self.parameterAsString(parameters, self.GITHUB_PASS, context)
         )
         return True
 
     def processAlgorithm(self, parameters, context, feedback):
         is_tms = False
-        output_dir = self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context)
-        if not output_dir:
+        if not self.OUTPUT_DIR_TMP:
             raise QgsProcessingException(self.tr('You need to specify output directory.'))
-        writer = DirectoryWriter(output_dir, is_tms)
+        writer = DirectoryWriter(self.OUTPUT_DIR_TMP, is_tms)
         feedback.pushConsoleInfo("Ok, all inputs are valid.")
         try:
             return self.generate(writer, parameters, context, feedback)
