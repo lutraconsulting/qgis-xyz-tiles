@@ -35,6 +35,7 @@ changelog=Improved publication of Point Layers.
     Added some messages to clarify the process.
     Send report on failure.
     Resolve conflict local changes.
+    Configure locally the user name and email.
 
 # Tags are comma separated with spaces allowed
 tags=wms, wfs, web, tiles, shapefile, raster, project, vector, openlayers, layers, geometry, analysis
