@@ -140,7 +140,7 @@ class MetaTile:
 
 class DirectoryWriter:
     format = 'PNG'
-    quality = 100
+    quality = -1
 
     def __init__(self, folder, is_tms):
         self.folder = folder
@@ -163,12 +163,15 @@ class DirectoryWriter:
         layerRenderer = clonedLayer.renderer()
         renderContext = QgsRenderContext()
         renderContext.setUseAdvancedEffects(True)
-        renderContext.setFlags(QgsRenderContext.Flag.RenderBlocking | QgsRenderContext.Flag.Antialiasing)
+        renderContext.setFlags(QgsRenderContext.Flag.Antialiasing)
         imageList = list()
         iconField = QgsField('icon_url', QVariant.String, 'text') #Danilo não vou verificar se o mapa ja tem esse atributo
         feedback.setProgressText("Adding a column 'icon_url'")
         clonedLayer.startEditing()
-        clonedLayer.addAttribute(iconField)
+        addedField = clonedLayer.addAttribute(iconField)
+        if (addedField == False):
+            feedback.pushConsoleInfo("Warning: " + layer.name() + " canceled failed to create a column to store the point symbol.")
+            return False
         clonedLayer.commitChanges()
         clonedLayer.startEditing()
         feedback.setProgressText("Rendering symbologies")
@@ -416,7 +419,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
     OUTPUT_DIR_TMP = None
 
-    version = '2.0.6'
+    version = '2.0.7'
 
     found_git = ''
 

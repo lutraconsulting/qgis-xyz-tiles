@@ -6,7 +6,7 @@
 name=Mappia Publisher
 qgisMinimumVersion=3.0
 description=Share your maps online (raster and shape) as a profissional. Easily make your QGIS maps online 24/7 (for free, no private server required). (Beta Access, please report any error)
-version=2.0.6
+version=2.0.7
 author=Danilo da Silveira Figueira
 email=danilo@csr.ufmg.br
 
@@ -30,12 +30,15 @@ repository=https://github.com/MappiaEarth/mappia_publisher
 hasProcessingProvider=yes
 # Uncomment the following line and add your changelog:
 changelog=Improved publication of Point Layers.
-    Fix some general isssues.
+    Fix some general issues.
     Point layer vector publishing as real objects.
     Added some messages to clarify the process.
     Send report on failure.
     Resolve conflict local changes.
     Configure locally the user name and email.
+    Remove class RenderBlocking to improve compatibility.
+    Layer Point icon_url creation check.
+    PNG lossless compression.
 
 # Tags are comma separated with spaces allowed
 tags=wms, wfs, web, tiles, shapefile, raster, project, vector, openlayers, layers, geometry, analysis
