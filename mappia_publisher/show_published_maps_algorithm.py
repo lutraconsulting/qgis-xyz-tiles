@@ -85,7 +85,7 @@ class ShowPublishedMapsAlgorithm(QgsProcessingAlgorithm):
             pointLayers = WMSCapabilities.getAllCustomLayers(capabilitiesTxt.text)
             mapsUrl = "https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl + "/"
             if len(foundMaps) > 0:
-                mapsUrl += "&zoomlevels=" + str(options[OptionsCfg.ZOOM_MAX]) + "&remotemap=" + ",".join([layer + ";" + layerAttr for layer in foundMaps])
+                mapsUrl += "&remotemap=" + ",".join([layer + ";" + layerAttr for layer in foundMaps])
             if len(pointLayers) > 0:
                 mapsUrl += "&points=" + ",".join(pointLayers)
             feedback.pushConsoleInfo("The following maps were found into the repository \"" + storeUrl + "\":" + '\n'.join(foundMaps) + "\n---------")

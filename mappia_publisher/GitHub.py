@@ -204,7 +204,7 @@ class GitHub:
         return repo.git.push(GitHub.getGitPassUrl(user, repository, password), "master:refs/heads/master")
 
     @staticmethod
-    def publishTilesToGitHub(folder, user, repository, feedback, password=None):
+    def publishTilesToGitHub(folder, user, repository, feedback, version, password=None):
         feedback.pushConsoleInfo('Github found commiting to your account.')
 
         repo = GitHub.getRepository(folder, user, repository, feedback)
@@ -223,7 +223,7 @@ class GitHub:
             feedback.pushConsoleInfo("No changes, nothing to commit.")
             return None
         feedback.pushConsoleInfo("Git: Committing changes.")
-        repo.git.commit(m="QGIS - " + now.strftime("%d/%m/%Y %H:%M:%S"))
+        repo.git.commit(m="QGIS - " + now.strftime("%d/%m/%Y %H:%M:%S") + " version: " + version)
         # feedback.pushConsoleInfo("CREATING TAG")
         # tag = now.strftime("%Y%m%d-%H%M%S")
         # new_tag = repo.create_tag(tag, message='Automatic tag "{0}"'.format(tag))

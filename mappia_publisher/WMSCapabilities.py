@@ -9,7 +9,7 @@ import json
 import os
 import re
 
-from qgis.core import (QgsCoordinateReferenceSystem, QgsProject, QgsPointXY, QgsCoordinateTransform)
+from qgis.core import (QgsCoordinateReferenceSystem, QgsProject, QgsPointXY, QgsCoordinateTransform, QgsVectorLayer)
 
 class WMSCapabilities:
 
@@ -167,7 +167,11 @@ class WMSCapabilities:
         return (newCoord.x, newCoord.y)
 
     @staticmethod
-    def getMapDescription(layerNameID, layerAttr, latMinX, latMinY, latMaxX, latMaxY, projMinX, projMinY, projMaxX, projMaxY):
+    def getMapKeyword(isShapefile, maxZoom):
+        return "group:" + ('shp' if isShapefile else 'tif') + "::disabledownload:notListing::maxZoom:" + str(maxZoom)
+
+    @staticmethod
+    def getMapDescription(layerNameID, layerAttr, latMinX, latMinY, latMaxX, latMaxY, projMinX, projMinY, projMaxX, projMaxY, maxZoom, isShapefile):
         layerAttr = UTILS.normalizeName(layerAttr)
         layerNameID = UTILS.normalizeName(layerNameID)
         # Inverti o minx/miny e maxX/maxY do epsg 4326 pq estava trocando no geoserver, mas n sei pq isso acontece.
@@ -177,7 +181,7 @@ class WMSCapabilities:
           <Title>""" + layerNameID + """</Title>
           <Abstract>GH:""" + layerNameID + """ ABSTRACT</Abstract>
           <KeywordList>
-            <Keyword>GITHUB</Keyword>
+            <Keyword>""" + WMSCapabilities.getMapKeyword(isShapefile, maxZoom) + """</Keyword>
           </KeywordList>
           <SRS>EPSG:4326</SRS>
           <LatLonBoundingBox minx=\"""" + str(latMinX) + """\" miny=\"""" + str(latMinY) + """\" maxx=\"""" + str(
@@ -345,9 +349,25 @@ class WMSCapabilities:
         doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities']["CustomLayer"].append(curLayerDefinition)
         WMSCapabilities.saveCurrentCapabilities(directory, doc)
 
+    @staticmethod
+    def setCapabilitiesDefaultMaxZoom(directory):
+        doc = WMSCapabilities.getCurrentCapabilitiesDoc(directory)
+
+        if 'Layer' in doc['WMT_MS_Capabilities']['Capability']['Layer']:
+            if type(doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer']) is collections.OrderedDict:
+                curLayer = doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer']
+                doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer'] = [curLayer]
+
+        if 'Layer' in doc['WMT_MS_Capabilities']['Capability']['Layer']:
+            for iLayer in range(len(doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer']) - 1, -1, -1):
+                curLayer = doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer'][iLayer]
+                if "KeywordList" in curLayer and type(curLayer['KeywordList']) is collections.OrderedDict and ("Keyword" in curLayer['KeywordList']) and curLayer['KeywordList']['Keyword'] == 'GITHUB':
+                    curLayer['KeywordList']['Keyword'] = WMSCapabilities.getMapKeyword(False, 8)
+        WMSCapabilities.saveCurrentCapabilities(directory, doc)
+
 
     @staticmethod
-    def updateXML(directory, layer, layerTitle, layerAttr):
+    def updateXML(directory, layer, layerTitle, layerAttr, maxZoom):
         doc = WMSCapabilities.getCurrentCapabilitiesDoc(directory)
 
         filename = UTILS.normalizeName(layerTitle) #layer Name no qgis
@@ -362,6 +382,7 @@ class WMSCapabilities:
         latMinX = llExtent.xMinimum()
         latMaxY = llExtent.yMaximum()
         latMinY = llExtent.yMinimum()
+        isShapefile = (isinstance(layer, QgsVectorLayer))
 
 
         if 'Layer' in doc['WMT_MS_Capabilities']['Capability']['Layer']:
@@ -378,7 +399,7 @@ class WMSCapabilities:
         #FIXME One attribute only. (Is always overwriting)
         newLayerDescription = xmltodict.parse(
             WMSCapabilities.getMapDescription(filename, layerAttr, latMinX, latMinY, latMaxX, latMaxY,
-                                              projMinX, projMinY, projMaxX, projMaxY))['CONTENT']
+                                              projMinX, projMinY, projMaxX, projMaxY, maxZoom, isShapefile))['CONTENT']
         if 'Layer' in doc['WMT_MS_Capabilities']['Capability']['Layer']:
             doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer'].append(newLayerDescription['Layer'])
         else:

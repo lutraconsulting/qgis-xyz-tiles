@@ -220,8 +220,11 @@ class DirectoryWriter:
     def write_custom_capabilities(self, layerTitle, layerAttr, operation):
         WMSCapabilities.updateCustomXML(self.folder, layerTitle, layerAttr, operation)
 
-    def write_capabilities(self, layer, layerTitle, layerAttr):
-        WMSCapabilities.updateXML(self.folder, layer, layerTitle, layerAttr)
+    def write_capabilities(self, layer, layerTitle, layerAttr, max_zoom):
+        WMSCapabilities.updateXML(self.folder, layer, layerTitle, layerAttr, max_zoom)
+
+    def setCapabilitiesDefaultMaxZoom(self, ):
+        WMSCapabilities.setCapabilitiesDefaultMaxZoom(self.folder)
 
     def write_description(self, layerTitle, layerAttr, cellTypeName, nullValue, operation):
         layerTitle = UTILS.normalizeName(layerTitle)
@@ -419,7 +422,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
     OUTPUT_DIR_TMP = None
 
-    version = '2.0.7'
+    version = '2.2.0'
 
     found_git = ''
 
@@ -559,6 +562,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
     def generate(self, writer, parameters, context, feedback):
         feedback.setProgress(1)
+        feedback.setProgressText("This steep can take a long time, and sometimes the interface can freezes.\n\nBut the job is still going, please wait and do not close the application.")
         min_zoom = 0
         max_zoom = self.parameterAsInt(parameters, self.ZOOM_MAX, context)
         outputFormat = QImage.Format_ARGB32
@@ -603,24 +607,25 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                         feedback.setProgress(98 * (progress / metatilesCount))
                 # writer.writeLegendPng(layer, layerTitle, layerAttr, mapOperation.getName())
                 writer.write_description(layerTitle, layerAttr, cellType, nullValue, mapOperation.getName())
-                writer.write_capabilities(layer, layerTitle, layerAttr)
+                writer.write_capabilities(layer, layerTitle, layerAttr, max_zoom)
                 writer.writeLegendJson(layer, layerTitle, layerAttr, mapOperation.getName())
                 writer.writeThumbnail(UTILS.getMapExtent(layer, dest_crs), layerTitle, layerAttr, mapOperation.getName(), layerRenderSettings)
+        writer.setCapabilitiesDefaultMaxZoom()
         feedback.setProgressText('Finished map tile generation. Uploading changes to Github.')
-        GitHub.publishTilesToGitHub(writer.folder, ghUser, ghRepository, feedback, ghPassword)
+        GitHub.publishTilesToGitHub(writer.folder, ghUser, ghRepository, feedback, self.version, ghPassword)
         storeUrl = GitHub.getGitUrl(ghUser, ghRepository)
         #FIXME Space in the map name will cause errors.
         feedback.pushConsoleInfo("All the maps in this repository:\n(Please only use maps with the same zoom level.)\n")
         allLayers = WMSCapabilities.getAllLayers(Path(os.path.join(writer.folder, "getCapabilities.xml")).read_text(), layerAttr)
         allPointLayers = WMSCapabilities.getAllCustomLayers(Path(os.path.join(writer.folder, "getCapabilities.xml")).read_text(), layerAttr)
         feedback.pushConsoleInfo("https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl
-            + "/&zoomlevels="+str(max_zoom) + "&remotemap=" + ",".join(allLayers) + "&points=" + ",".join(allPointLayers) + "\n")
+            + "/" + "&remotemap=" + ",".join(allLayers) + "&points=" + ",".join(allPointLayers) + "\n")
         feedback.pushConsoleInfo("Current published Maps:\n")
         generatedMaps = ["GH:" + UTILS.normalizeName(layer.name()) + ";" + layerAttr for layer in layers if not self.isPointLayer(layer)]
         pointLayers = ["GH:" + UTILS.normalizeName(layer.name()) for layer in layers if self.isPointLayer(layer)]
         curMapsUrl = "https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl + "/"
         if len(generatedMaps) > 0:
-            curMapsUrl += "&zoomlevels=" + str(max_zoom) + "&remotemap=" + ",".join(generatedMaps)
+            curMapsUrl += "&remotemap=" + ",".join(generatedMaps)
         if len(pointLayers) > 0:
             curMapsUrl += "&points=" + ",".join(pointLayers)
         feedback.setProgressText("Copy the link above in any browser to see your maps online. ")
