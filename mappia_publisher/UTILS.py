@@ -3,16 +3,80 @@ import re
 import math
 import os
 import unicodedata
+import tempfile
 from http import HTTPStatus
 from urllib.parse import urlencode
 import requests
 from xml.sax.saxutils import escape
-from qgis.core import (QgsProject, QgsCoordinateTransform, QgsMessageLog)
+from zipfile import ZipFile
+from qgis.core import (QgsProject, QgsCoordinateTransform, QgsMessageLog, QgsVectorLayer, QgsRasterLayer)
 
 import random
 import string
 
 class UTILS:
+
+    #Danilo o zip precisa deletar dps
+    @staticmethod
+    def zipFiles(dir, pattern):
+        curTmpFile = tempfile.NamedTemporaryFile(suffix='.zip', delete=False)
+        compPattern = re.compile(pattern)
+        # create a ZipFile object
+        with ZipFile(curTmpFile, 'w') as zipObj:
+            # Iterate over all the files in directory
+            for folderName, subfolders, filenames in os.walk(dir):
+                for filename in filenames:
+                    if not compPattern.match(filename):
+                        continue
+                    # create complete filepath of file in directory
+                    filePath = os.path.join(folderName, filename)
+                    # Add file to zip
+                    zipObj.write(filePath, os.path.basename(filePath))
+            return curTmpFile
+        return None
+
+    @staticmethod
+    def getFileSize(dir, pattern):
+        total = 0
+        compPattern = re.compile(pattern)
+        for folderName, subfolders, filenames in os.walk(dir):
+            for filename in filenames:
+                if not compPattern.match(filename):
+                    continue
+                filePath = os.path.join(folderName, filename)
+                if os.path.isfile(filePath):
+                    total = total + os.path.getsize(filePath)
+        return total
+
+    #Danilo //Danilo return a  TemporaryFile when works
+    #Danilo o zip precisa deletar
+    @staticmethod
+    def generateZipLayer(layer):
+        print("Generating zip for " + layer.name() + " layer.")
+        sourceUri = layer.dataProvider().dataSourceUri()
+        absolutePath = None
+        if isinstance(layer, QgsRasterLayer):
+            if '.tiff' in sourceUri:
+                absolutePath = sourceUri[:(sourceUri.index(".tiff") + 5)]
+            elif '.tif' in sourceUri:
+                absolutePath = sourceUri[:(sourceUri.index(".tif") + 4)]
+            else:
+                print("Only tiff and tif is allowable to download.")
+        elif isinstance(layer, QgsVectorLayer):
+            if '.shp' in sourceUri:
+                absolutePath = sourceUri[:(sourceUri.index(".shp") + 4)]
+            else:
+                print("Only shp file is allowable to download.")
+        if absolutePath is not None:
+            fileName = os.path.basename(absolutePath)
+            fileNameWithoutExt = os.path.splitext(fileName)[0]
+            dirName = os.path.dirname(absolutePath)
+            zipFile = UTILS.zipFiles(dirName + os.path.sep, fileNameWithoutExt + "*")
+            if os.path.getsize(zipFile.name) > 2e9:
+                print("The map filesize is greater than the GitHub 2Gb limit. (all files in this folder starting with " + fileNameWithoutExt + " were included.")
+            else:
+                return zipFile
+        return None
 
     """
     Use safer names.

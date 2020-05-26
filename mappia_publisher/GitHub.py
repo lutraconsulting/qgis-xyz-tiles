@@ -1,22 +1,29 @@
-from http import HTTPStatus
 import re
 import os
 import random
 import webbrowser
 import requests
-from datetime import datetime
+import time
 import json
+import glob
+from http import HTTPStatus
+from requests import request
+from datetime import datetime
 from time import sleep
 from .UTILS import UTILS
 from qgis.PyQt.QtWidgets import QMessageBox
 
 class GitHub:
 
+    originName = "mappia"
+    releaseName = "Map_Download"
+    githubApi = 'https://api.github.com/'
+
     personal_token = ''
 
     @staticmethod
     def testLogin(user, token):
-        return requests.get(url='https://api.github.com/user', auth=(user, token)).status_code == 200
+        return requests.get(url=GitHub.githubApi + 'user', auth=(user, token)).status_code == 200
 
     @staticmethod
     def prepareEnvironment(gitExecutable):
@@ -43,6 +50,18 @@ class GitHub:
         except:
             pass
         return gitExe
+
+    @staticmethod
+    def getRepositorySize(user, repository, password):
+        response = GitHub._request('GET', 'https://api.github.com/repos/' + user + "/" + repository, token=password,
+                                   headers={'Content-Type': 'application/json'})
+        try:
+            if response.status_code == 200:
+                return json.loads(response.content)['size']
+        except:
+            print("Failed to get the repository size, ignoring it.")
+            return None
+        return None
 
     @staticmethod
     def getGitUrl(githubUser, githubRepository):
@@ -84,9 +103,10 @@ class GitHub:
         repo.git.config("user.name", user)
 
     @staticmethod
-    def getRepository(folder, user, repository, feedback):
+    def getRepository(folder, user, repository, password, feedback):
         from git import Repo
         from git import InvalidGitRepositoryError
+
 
 
         # #Não está funcionando a validação #FIXME Repository creation verification is not working (Modify the create Repo function to verify the creation)
@@ -98,6 +118,12 @@ class GitHub:
         #Cria ou pega o repositório atual.
         repo = None
         if not os.path.exists(folder) or (os.path.exists(folder) and not os.listdir(folder)):
+            repoSize = GitHub.getRepositorySize(user, repository, password)
+            if repoSize is not None:
+                repoSize = str(repoSize) + "(kb)"
+            else:
+                repoSize = ''
+            feedback.pushConsoleInfo("Cloning git repository: " + GitHub.getGitUrl(user, repository) + "\nPlease wait, it will download all maps in your repository. " + repoSize)
             repo = Repo.clone_from(GitHub.getGitUrl(user, repository), folder, recursive=True)
             assert (os.path.exists(folder))
             assert(repo)
@@ -117,7 +143,7 @@ class GitHub:
     @staticmethod
     def isOptionsOk(folder, user, repository, feedback, ghPassword=None):
         #Cria ou pega o repositório atual.
-        repo = GitHub.getRepository(folder, user, repository, feedback)
+        repo = GitHub.getRepository(folder, user, repository, ghPassword, feedback)
         GitHub.configUser(repo, user)
         if repo.git.status("--porcelain"):
             response = QMessageBox.question(None, "Local repository is not clean.",
@@ -160,7 +186,7 @@ class GitHub:
             'branch': 'master',
             'auto_init': 'true'
         }
-        resp = requests.post('https://api.github.com/user/repos', auth=(ghUser, ghPass), data=json.dumps(payload))
+        resp = requests.post(GitHub.githubApi + 'user/repos', auth=(ghUser, ghPass), data=json.dumps(payload))
         if resp.status_code == 201:
             sleep(1)
             return True
@@ -207,7 +233,7 @@ class GitHub:
     def publishTilesToGitHub(folder, user, repository, feedback, version, password=None):
         feedback.pushConsoleInfo('Github found commiting to your account.')
 
-        repo = GitHub.getRepository(folder, user, repository, feedback)
+        repo = GitHub.getRepository(folder, user, repository, password, feedback)
 
         now = datetime.now()
         # https://stackoverflow.com/questions/6565357/git-push-requires-username-and-password
@@ -251,7 +277,7 @@ class GitHub:
                 "scopes": ["repo", "write:org"],
                 "note": "Mappia Access (" + str(random.uniform(0, 1) * 100000) + ")"
             }
-            resp = requests.post(url='https://api.github.com/authorizations', headers={'content-type': 'application/json'}, auth=(user, password), data=json.dumps(params))
+            resp = requests.post(url=GitHub.githubApi + 'authorizations', headers={'content-type': 'application/json'}, auth=(user, password), data=json.dumps(params))
             if resp.status_code == HTTPStatus.CREATED:
                 return json.loads(resp.text)["token"]
             elif resp.status_code == HTTPStatus.UNPROCESSABLE_ENTITY:
@@ -290,3 +316,185 @@ class GitHub:
         else:
             foundToken = None
         return foundToken
+
+
+    @staticmethod
+    def _request(*args, **kwargs):
+        with_auth = kwargs.pop("with_auth", True)
+        token = kwargs.pop("token", '')
+        if not token:
+            token = os.environ.get("GITHUB_TOKEN", None)
+        if token and with_auth:
+            kwargs["auth"] = (token, 'x-oauth-basic')
+        for _ in range(3):
+            response = request(*args, **kwargs)
+            is_travis = os.getenv("TRAVIS", None) is not None
+            if is_travis and 400 <= response.status_code < 500:
+                print("Retrying in 1s (%s Client Error: %s for url: %s)" % (
+                    response.status_code, response.reason, response.url))
+                time.sleep(1)
+                continue
+            break
+        return response
+
+    @staticmethod
+    def _recursive_gh_get(href, items):
+        """Recursively get list of GitHub objects.
+
+        See https://developer.github.com/v3/guides/traversing-with-pagination/
+        """
+        response = GitHub._request('GET', href)
+        response.raise_for_status()
+        items.extend(response.json())
+        if "link" not in response.headers:
+            return
+        # links = link_header.parse(response.headers["link"])
+        # rels = {link.rel: link.href for link in links.links}
+        # if "next" in rels:
+        #     ghRelease._recursive_gh_get(rels["next"], items)
+
+    #Return a list of assets in commit 'releaseName' within this repository.
+    @staticmethod
+    def getAssets(user, repository, password, tagName):
+        release = GitHub.getRelease(user, repository, password, tagName)
+        if not release:
+            raise Exception('Release with tag_name {0} not found'.format(tagName))
+        assets = []
+        GitHub._recursive_gh_get(GitHub.githubApi + 'repos/{0}/releases/{1}/assets'.format(
+            user + "/" + repository, release["id"]), assets)
+        return assets
+
+    #If exists get the release with name 'releaseName'.
+    @staticmethod
+    def getRelease(user, repository, password, tagName):
+        def _getRelease(href, password, tagName):
+            releaseResp = GitHub._request('GET', href, token=password)
+            releaseResp.raise_for_status()
+            result = None
+            for curResp in releaseResp.json():
+                if (curResp and (curResp['tag_name'] == tagName)):
+                    result = curResp
+                    break
+            if result is None and 'link' in releaseResp.headers:
+                raise Exception("Please report: not implemented yet." + json.dumps(releaseResp.headers["link"]))
+        # if 'link' in releaseResp.headers: #Danilo precisa implementar ainda
+        #add resp to curResp.
+        #     # links = link_header.parse(response.headers["link"])
+        #     # rels = {link.rel: link.href for link in links.links}
+        #     # if "next" in rels:
+        #     #     ghRelease._recursive_gh_get(rels["next"], items)
+        #     # Danilo preciso fazer o parse
+            return result
+        return _getRelease(GitHub.githubApi + 'repos/' + user + "/" + repository + "/releases", password, tagName)
+
+    #Create the download tag or report a error.
+    @staticmethod
+    def createDownloadTag(user, repository, password, feedback):
+        data = {
+            'tag_name': GitHub.releaseName,
+            'name': GitHub.releaseName,
+            'body': GitHub.releaseName,
+            'draft': False,
+            'prerelease': False
+        }
+        response = GitHub._request('POST', GitHub.githubApi + 'repos/' + user + "/" + repository + "/releases", token=password, data=json.dumps(data), headers={'Content-Type': 'application/json'})
+        if (response.status_code == 422) and GitHub.getRelease(user, repository, password, GitHub.releaseName) is not None: #vou considerar q ja está criado
+            pass
+        else:
+            response.raise_for_status()
+
+    #Try to add the 'uploadFile' as a layer asset.
+    @staticmethod
+    def addReleaseFile(user, password, repository, maxRetry, forceUpdateFile, uploadFile, layer, feedback):
+        if uploadFile is None:
+            return None
+        releaseRef = GitHub.getRelease(user, repository, password, GitHub.releaseName)
+
+        if releaseRef is None or releaseRef['upload_url'] is None:
+            raise Exception("Release '" + GitHub.releaseName + "' was not found")
+        assets = GitHub.getAssets(user, repository, password, GitHub.releaseName)
+        uploadUrl = releaseRef['upload_url']
+        if "{" in uploadUrl:
+            uploadUrl = uploadUrl[:uploadUrl.index("{")]
+        basename = UTILS.normalizeName(os.path.basename(layer.name())) + str(os.path.splitext(uploadFile)[1])
+        #Example: #'https://github.com/asfixia/Mappia_Example_t/releases/download/Map_Download/distance_to_deforested.tif'
+        fileDownloadPath = 'https://github.com/' + user + "/" + repository + "/releases/download/" + GitHub.releaseName + "/" + basename
+
+        for asset in assets:
+            if asset["name"] == basename:
+                # See https://developer.github.com/v3/repos/releases/#response-for-upstream-failure  # noqa: E501
+                if asset["state"] == "new" or asset["state"] == "uploaded": #override the old file if last upload failed or update if 'forceUpdateFile' is true.
+                    if asset["state"] == "uploaded" and not forceUpdateFile:
+                        feedback.setProgressText("File %s already uploaded." % asset['name'])
+                        return fileDownloadPath
+                    if asset["state"] == "new":
+                        feedback.setProgressText("  deleting %s (invalid asset "
+                              "with state set to 'new')" % asset['name'])
+                    else:
+                        feedback.setProgressText("Updating file %s." % asset['name'])
+                    url = (
+                            GitHub.githubApi
+                            + 'repos/{0}/releases/assets/{1}'.format(user + "/" + repository, asset['id'])
+                    )
+                    response = GitHub._request('DELETE', url, token=password)
+                    response.raise_for_status()
+
+        file_size = os.path.getsize(uploadFile)
+        feedback.setProgressText("  uploading %s of size %s" % (basename, str(file_size)))
+
+        url = '{0}?name={1}'.format(uploadUrl, basename)
+
+        # Attempt upload
+        with open(uploadFile, 'rb') as f:
+            with progress_reporter_cls(
+                    label=basename, length=file_size, feedback=feedback) as reporter:
+                response = GitHub._request(
+                    'POST', url, headers={'Content-Type': 'application/octet-stream'},
+                    data=_ProgressFileReader(f, reporter), token=password)
+                data = response.json()
+
+        if response.status_code == 502 and maxRetry > 1:
+            feedback.setProgressText("Retrying (upload failed with status_code=502)")
+            return GitHub.addReleaseFile(user, password, repository, maxRetry - 1, forceUpdateFile, uploadFile, layer, feedback)
+        elif response.status_code == 502 and maxRetry <= 1:
+            return None
+        else:
+            response.raise_for_status()
+        return fileDownloadPath
+
+####################################### AUX CLASS ##########################
+
+class progress_reporter_cls(object):
+    reportProgress = False
+
+    def __init__(self, label='', length=0, feedback=None):
+        self.label = label
+        self.length = length
+        self.total = 0
+        self.feedback = feedback
+
+    def update(self, chunk_size):
+        self.total = self.total + chunk_size
+        if self.feedback is not None:
+            self.feedback.setProgressText('Total: ' + str(self.total) + " (kb)")
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, tb):
+        pass
+
+#Wrapper used to capture File IO read progress.
+class _ProgressFileReader(object):
+    def __init__(self, stream, reporter):
+        self._stream = stream
+        self._reporter = reporter
+
+    def read(self, _size):
+        _chunk = self._stream.read(_size)
+        self._reporter.update(len(_chunk))
+        return _chunk
+
+    def __getattr__(self, attr):
+        return getattr(self._stream, attr)

@@ -10,6 +10,7 @@ class OptionsCfg:
     GH_REPOSITORY = "gh_repository"
     FOLDER = "folder"
     GH_PASS = "gh_pass"
+    INCLUDE_DL = 'include_dl'
 
     # https://gis.stackexchange.com/questions/130027/getting-a-plugin-path-using-python-in-qgis
     @staticmethod
@@ -19,7 +20,7 @@ class OptionsCfg:
         return os.path.join(basepath, name)
 
     @staticmethod
-    def createCfg(zoom_max=None, gitExe=None, attrName=None, ghUser=None, ghRepository=None, folder=None, ghPass=None):
+    def createCfg(zoom_max=None, gitExe=None, attrName=None, ghUser=None, ghRepository=None, folder=None, ghPass=None, includeDl=None):
         defaults = dict()
         defaults[OptionsCfg.ZOOM_MAX] = zoom_max if zoom_max is not None else 9
         defaults[OptionsCfg.GIT_EXE] = gitExe if gitExe is not None else ''
@@ -28,13 +29,14 @@ class OptionsCfg:
         defaults[OptionsCfg.GH_REPOSITORY] = ghRepository if ghRepository is not None else ''
         defaults[OptionsCfg.FOLDER] = folder if folder is not None else ''
         defaults[OptionsCfg.GH_PASS] = ghPass if ghPass is not None else ''
+        defaults[OptionsCfg.INCLUDE_DL] = includeDl if includeDl is not None else ''
         return defaults
 
 
     @staticmethod
-    def write(zoom_max, gitExe, attrName, ghUser, ghRepository, folder, ghPass):
+    def write(zoom_max, gitExe, attrName, ghUser, ghRepository, folder, ghPass, includeDl):
         with open(OptionsCfg.resolve("options.json"), 'w', encoding="utf-8") as f:
-            json.dump(OptionsCfg.createCfg(zoom_max, gitExe, attrName, ghUser, ghRepository, folder, ghPass), f)
+            json.dump(OptionsCfg.createCfg(zoom_max, gitExe, attrName, ghUser, ghRepository, folder, ghPass, includeDl), f)
 
     @staticmethod
     def read():

@@ -6,15 +6,16 @@
 name=Mappia Publisher
 qgisMinimumVersion=3.0
 description=Share your maps online (raster and shape) as a profissional. Easily make your QGIS maps online 24/7 (for free, no private server required). (Beta Access, please report any error)
-version=2.2.0
+version=2.3.0
 author=Danilo da Silveira Figueira
 email=danilo@csr.ufmg.br
 
 about=Mappia is an online mapping platform accessible for everyone. Easy and free to share your maps online. (Beta Access, please report any issue)
     _
-    Please REPORT ISSUES at https://github.com/MappiaEarth/mappia_publisher/issues , help us improve, we will be glad to fix it as soon as possible.
-    _
+    Publish all your maps, and customize an interactive platform.
+    Now Raster support with infinite zoom, Point Vectors with access to attributes, share maps by download, and much more.
     We keep improving the Layer Vector Support.
+    The raster support was improved, there is no zoom limit anymore.
     _
     The Mappia is used in many projects (csr.ufmg.br/csr/projeto/) like: the amazon worth evaluation (csr.ufmg.br/amazones), and fire risk areas identification in real time in Brazilian cerrado (csr.ufmg.br/fipcerrado).
     _
@@ -29,7 +30,8 @@ repository=https://github.com/MappiaEarth/mappia_publisher
 
 hasProcessingProvider=yes
 # Uncomment the following line and add your changelog:
-changelog=Improved visualization of raster layers.
+changelog=Added option to upload source files for further download.
+    Improved visualization of raster layers.
     Improved publication of Point Layers.
     Fix some general issues.
     Point layer vector publishing as real objects.

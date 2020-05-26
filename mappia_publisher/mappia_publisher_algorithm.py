@@ -220,8 +220,8 @@ class DirectoryWriter:
     def write_custom_capabilities(self, layerTitle, layerAttr, operation):
         WMSCapabilities.updateCustomXML(self.folder, layerTitle, layerAttr, operation)
 
-    def write_capabilities(self, layer, layerTitle, layerAttr, max_zoom):
-        WMSCapabilities.updateXML(self.folder, layer, layerTitle, layerAttr, max_zoom)
+    def write_capabilities(self, layer, layerTitle, layerAttr, max_zoom, downloadLink):
+        WMSCapabilities.updateXML(self.folder, layer, layerTitle, layerAttr, max_zoom, downloadLink)
 
     def setCapabilitiesDefaultMaxZoom(self, ):
         WMSCapabilities.setCapabilitiesDefaultMaxZoom(self.folder)
@@ -409,6 +409,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     ZOOM_MAX = 'ZOOM_MAX'
     EXTENT = 'EXTENT'
     LAYER_ATTRIBUTE = 'LAYER_ATTRIBUTE'
+    INCLUDE_DOWNLOAD = 'INCLUDE_DOWNLOAD'
 
     GITHUB_REPOSITORY = 'GITHUB_REPOSITORY'
     GITHUB_USER = 'GITHUB_USER'
@@ -422,7 +423,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
     OUTPUT_DIR_TMP = None
 
-    version = '2.2.0'
+    version = '2.3.0'
 
     found_git = ''
 
@@ -487,6 +488,14 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         )
         maxZoomParameter.setFlags(maxZoomParameter.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
         self.addParameter(maxZoomParameter)
+
+        includeSourceDownload = QgsProcessingParameterBoolean(
+            self.INCLUDE_DOWNLOAD,
+            self.tr('Upload maps for further download (2GB limit per unique map)'),
+            defaultValue=False
+        )
+        includeSourceDownload.setFlags(includeSourceDownload.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(includeSourceDownload)
 
         gitExeParameter = QgsProcessingParameterString(
             self.GIT_EXECUTABLE,
@@ -562,13 +571,14 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
     def generate(self, writer, parameters, context, feedback):
         feedback.setProgress(1)
-        feedback.setProgressText("This steep can take a long time, and sometimes the interface can freezes.\n\nBut the job is still going, please wait and do not close the application.")
+        feedback.setProgressText("This step can take a long time, and sometimes the interface can freezes.\nBut the job is still going, please wait and do not close the application.")
         min_zoom = 0
         max_zoom = self.parameterAsInt(parameters, self.ZOOM_MAX, context)
         outputFormat = QImage.Format_ARGB32
         layerAttr = "1" #TODO self.parameterAsString(parameters, self.LAYER_ATTRIBUTE, context)
         cellType = 'int32'
         nullValue = -128
+        includeDl = self.parameterAsBool(parameters, self.INCLUDE_DOWNLOAD, context)
         ghUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
         ghPassword = self.parameterAsString(parameters, self.GITHUB_PASS, context)
         ghRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
@@ -577,6 +587,9 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         dest_crs = QgsCoordinateReferenceSystem('EPSG:3857')
         layers = self.parameterAsLayerList(parameters, self.LAYERS, context)
         metatilesCount = self.getTotalTiles(wgs_crs, min_zoom, max_zoom, layers)
+        if includeDl:
+            GitHub.createDownloadTag(ghUser, ghRepository, ghPassword, feedback)
+            #Danilo precisa de commit?
         #FIXME Dar um update e um push
         progress = 0
         for layer in layers:
@@ -606,8 +619,17 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                         progress = progress + 1
                         feedback.setProgress(98 * (progress / metatilesCount))
                 # writer.writeLegendPng(layer, layerTitle, layerAttr, mapOperation.getName())
+                downloadLink = None #Zip file and upload it to download.
+                if includeDl:
+                    curFileDl = UTILS.generateZipLayer(layer)
+                    if curFileDl is not None:
+                        downloadLink = GitHub.addReleaseFile(ghUser, ghPassword, ghRepository, 2, False, os.path.abspath(curFileDl.name), layer, feedback)
+                        if downloadLink is not None:
+                            feedback.pushConsoleInfo("Map download link: " + downloadLink)
+                        # os.remove(curFileDl.name) #está dando erro algumas vezes ao remover o arquivo temporário.
+                        curFileDl = None
                 writer.write_description(layerTitle, layerAttr, cellType, nullValue, mapOperation.getName())
-                writer.write_capabilities(layer, layerTitle, layerAttr, max_zoom)
+                writer.write_capabilities(layer, layerTitle, layerAttr, max_zoom, downloadLink)
                 writer.writeLegendJson(layer, layerTitle, layerAttr, mapOperation.getName())
                 writer.writeThumbnail(UTILS.getMapExtent(layer, dest_crs), layerTitle, layerAttr, mapOperation.getName(), layerRenderSettings)
         writer.setCapabilitiesDefaultMaxZoom()
@@ -709,6 +731,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         gitRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
         ghPassword = self.parameterAsString(parameters, self.GITHUB_PASS, context)
         self.OUTPUT_DIR_TMP = self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context)
+        feedback.pushConsoleInfo("Automatic Step: Checking remote repository.")
         if not GitHub.existsRepository(curUser, gitRepository) and QMessageBox.Yes != QMessageBox.question(
                 None,
                 "Repository not found",
@@ -725,6 +748,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                 webbrowser.open_new("https://github.com/new")
             feedback.pushConsoleInfo("Error: Failed to create the repository, please create a one at: https://github.com/new")
             return False
+        feedback.pushConsoleInfo("Automatic Step: Checking git executable.")
         gitExe = self.parameterAsString(parameters, self.GIT_EXECUTABLE, context)
         if not gitExe or not os.path.isfile(gitExe):
             feedback.pushConsoleInfo("Select your git executable program.\n" + str(
@@ -733,11 +757,15 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         if not self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context):
             feedback.pushConsoleInfo("Please specify your repository name.\nYou can create one at: https://github.com/new")
             return False
+        ghIncludeDownload = self.parameterAsBool(parameters, self.INCLUDE_DOWNLOAD, context)
+        #Danilo depois checar o tamanho dos mapas anteriormente e caso passar 2gb perguntar o usuário se poderia continuar.
+        feedback.pushConsoleInfo("Automatic Step: Configuring git parameters.")
         if self.parameterAsString(parameters, self.GIT_EXECUTABLE, context):
             GitHub.prepareEnvironment(self.parameterAsString(parameters, self.GIT_EXECUTABLE, context))
         if not GitHub.isOptionsOk(self.OUTPUT_DIR_TMP, curUser, gitRepository, feedback, ghPassword):
             feedback.setProgressText("Error: Canceling the execution, please select another output folder.")
             return False
+        feedback.pushConsoleInfo("Automatic Step: Saving option changes.")
         OptionsCfg.write(
             self.parameterAsInt(parameters, self.ZOOM_MAX, context),
             self.parameterAsString(parameters, self.GIT_EXECUTABLE, context),
@@ -745,8 +773,10 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             self.parameterAsString(parameters, self.GITHUB_USER, context),
             self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context),
             self.OUTPUT_DIR_TMP,
-            self.parameterAsString(parameters, self.GITHUB_PASS, context)
+            self.parameterAsString(parameters, self.GITHUB_PASS, context),
+            self.parameterAsBool(parameters, self.INCLUDE_DOWNLOAD, context)
         )
+        feedback.pushConsoleInfo("Automatic Step: Changes Saved.")
         return True
 
     def processAlgorithm(self, parameters, context, feedback):

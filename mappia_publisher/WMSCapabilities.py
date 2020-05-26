@@ -167,11 +167,17 @@ class WMSCapabilities:
         return (newCoord.x, newCoord.y)
 
     @staticmethod
-    def getMapKeyword(isShapefile, maxZoom):
-        return "group:" + ('shp' if isShapefile else 'tif') + "::disabledownload:notListing::maxZoom:" + str(maxZoom)
+    def getMapKeyword(isShapefile, maxZoom, dlLink=None):
+        if dlLink is None or len(dlLink) == 0:
+            dlLink = 'disabledownload'
+        elif ':' in dlLink:
+            dlLink = dlLink[(dlLink.index(':') + 1):]
+        elif '˸' in dlLink:
+            dlLink = dlLink[(dlLink.index('˸') + 1):]
+        return "group˸" + ('shp' if isShapefile else 'tif') + "˸˸˸" + dlLink + "˸notListing˸˸maxZoom˸" + str(maxZoom)
 
     @staticmethod
-    def getMapDescription(layerNameID, layerAttr, latMinX, latMinY, latMaxX, latMaxY, projMinX, projMinY, projMaxX, projMaxY, maxZoom, isShapefile):
+    def getMapDescription(layerNameID, layerAttr, latMinX, latMinY, latMaxX, latMaxY, projMinX, projMinY, projMaxX, projMaxY, maxZoom, isShapefile, dLink):
         layerAttr = UTILS.normalizeName(layerAttr)
         layerNameID = UTILS.normalizeName(layerNameID)
         # Inverti o minx/miny e maxX/maxY do epsg 4326 pq estava trocando no geoserver, mas n sei pq isso acontece.
@@ -181,7 +187,7 @@ class WMSCapabilities:
           <Title>""" + layerNameID + """</Title>
           <Abstract>GH:""" + layerNameID + """ ABSTRACT</Abstract>
           <KeywordList>
-            <Keyword>""" + WMSCapabilities.getMapKeyword(isShapefile, maxZoom) + """</Keyword>
+            <Keyword>""" + WMSCapabilities.getMapKeyword(isShapefile, maxZoom, dLink) + """</Keyword>
           </KeywordList>
           <SRS>EPSG:4326</SRS>
           <LatLonBoundingBox minx=\"""" + str(latMinX) + """\" miny=\"""" + str(latMinY) + """\" maxx=\"""" + str(
@@ -367,7 +373,7 @@ class WMSCapabilities:
 
 
     @staticmethod
-    def updateXML(directory, layer, layerTitle, layerAttr, maxZoom):
+    def updateXML(directory, layer, layerTitle, layerAttr, maxZoom, downloadLink):
         doc = WMSCapabilities.getCurrentCapabilitiesDoc(directory)
 
         filename = UTILS.normalizeName(layerTitle) #layer Name no qgis
@@ -399,7 +405,7 @@ class WMSCapabilities:
         #FIXME One attribute only. (Is always overwriting)
         newLayerDescription = xmltodict.parse(
             WMSCapabilities.getMapDescription(filename, layerAttr, latMinX, latMinY, latMaxX, latMaxY,
-                                              projMinX, projMinY, projMaxX, projMaxY, maxZoom, isShapefile))['CONTENT']
+                                              projMinX, projMinY, projMaxX, projMaxY, maxZoom, isShapefile, downloadLink))['CONTENT']
         if 'Layer' in doc['WMT_MS_Capabilities']['Capability']['Layer']:
             doc['WMT_MS_Capabilities']['Capability']['Layer']['Layer'].append(newLayerDescription['Layer'])
         else:
