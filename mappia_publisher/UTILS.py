@@ -72,6 +72,7 @@ class UTILS:
             fileNameWithoutExt = os.path.splitext(fileName)[0]
             dirName = os.path.dirname(absolutePath)
             zipFile = UTILS.zipFiles(dirName + os.path.sep, fileNameWithoutExt + "*")
+            zipFile.close()
             if os.path.getsize(zipFile.name) > 2e9:
                 print("The map filesize is greater than the GitHub 2Gb limit. (all files in this folder starting with " + fileNameWithoutExt + " were included.")
             else:

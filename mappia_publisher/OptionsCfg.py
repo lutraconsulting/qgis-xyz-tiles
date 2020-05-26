@@ -29,7 +29,7 @@ class OptionsCfg:
         defaults[OptionsCfg.GH_REPOSITORY] = ghRepository if ghRepository is not None else ''
         defaults[OptionsCfg.FOLDER] = folder if folder is not None else ''
         defaults[OptionsCfg.GH_PASS] = ghPass if ghPass is not None else ''
-        defaults[OptionsCfg.INCLUDE_DL] = includeDl if includeDl is not None else ''
+        defaults[OptionsCfg.INCLUDE_DL] = includeDl in ['True', '1'] if includeDl is not None else ''
         return defaults
 
 

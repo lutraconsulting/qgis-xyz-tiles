@@ -492,7 +492,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         includeSourceDownload = QgsProcessingParameterBoolean(
             self.INCLUDE_DOWNLOAD,
             self.tr('Upload maps for further download (2GB limit per unique map)'),
-            defaultValue=False
+            defaultValue=options['include_dl']
         )
         includeSourceDownload.setFlags(includeSourceDownload.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
         self.addParameter(includeSourceDownload)
@@ -571,7 +571,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
     def generate(self, writer, parameters, context, feedback):
         feedback.setProgress(1)
-        feedback.setProgressText("This step can take a long time, and sometimes the interface can freezes.\nBut the job is still going, please wait and do not close the application.")
+        feedback.setProgressText("This step can take a long time, and despite the job is going, sometime sometimes the interface can freezes.\nThe job is still going, please wait and do not close the application until it finishes.")
         min_zoom = 0
         max_zoom = self.parameterAsInt(parameters, self.ZOOM_MAX, context)
         outputFormat = QImage.Format_ARGB32
@@ -623,9 +623,10 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                 if includeDl:
                     curFileDl = UTILS.generateZipLayer(layer)
                     if curFileDl is not None:
-                        downloadLink = GitHub.addReleaseFile(ghUser, ghPassword, ghRepository, 2, False, os.path.abspath(curFileDl.name), layer, feedback)
+                        downloadLink = GitHub.addReleaseFile(ghUser, ghPassword, ghRepository, 2, True, os.path.abspath(curFileDl.name), layer, feedback)
                         if downloadLink is not None:
                             feedback.pushConsoleInfo("Map download link: " + downloadLink)
+                        # curFileDl.close()
                         # os.remove(curFileDl.name) #está dando erro algumas vezes ao remover o arquivo temporário.
                         curFileDl = None
                 writer.write_description(layerTitle, layerAttr, cellType, nullValue, mapOperation.getName())

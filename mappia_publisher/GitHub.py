@@ -338,12 +338,12 @@ class GitHub:
         return response
 
     @staticmethod
-    def _recursive_gh_get(href, items):
+    def _recursive_gh_get(href, items, password=None):
         """Recursively get list of GitHub objects.
 
         See https://developer.github.com/v3/guides/traversing-with-pagination/
         """
-        response = GitHub._request('GET', href)
+        response = GitHub._request('GET', href, token=password)
         response.raise_for_status()
         items.extend(response.json())
         if "link" not in response.headers:
@@ -361,7 +361,7 @@ class GitHub:
             raise Exception('Release with tag_name {0} not found'.format(tagName))
         assets = []
         GitHub._recursive_gh_get(GitHub.githubApi + 'repos/{0}/releases/{1}/assets'.format(
-            user + "/" + repository, release["id"]), assets)
+            user + "/" + repository, release["id"]), assets, password)
         return assets
 
     #If exists get the release with name 'releaseName'.
@@ -382,7 +382,7 @@ class GitHub:
         #     # links = link_header.parse(response.headers["link"])
         #     # rels = {link.rel: link.href for link in links.links}
         #     # if "next" in rels:
-        #     #     ghRelease._recursive_gh_get(rels["next"], items)
+        #     #     ghRelease._recursive_gh_get(rels["next"], items, token)
         #     # Danilo preciso fazer o parse
             return result
         return _getRelease(GitHub.githubApi + 'repos/' + user + "/" + repository + "/releases", password, tagName)
@@ -440,7 +440,7 @@ class GitHub:
                     response.raise_for_status()
 
         file_size = os.path.getsize(uploadFile)
-        feedback.setProgressText("  uploading %s of size %s" % (basename, str(file_size)))
+        feedback.setProgressText("  Uploading %s of size %s (kb)" % (basename, str(file_size)))
 
         url = '{0}?name={1}'.format(uploadUrl, basename)
 
@@ -471,12 +471,14 @@ class progress_reporter_cls(object):
         self.label = label
         self.length = length
         self.total = 0
+        self.lastReport = 0
         self.feedback = feedback
 
     def update(self, chunk_size):
         self.total = self.total + chunk_size
-        if self.feedback is not None:
-            self.feedback.setProgressText('Total: ' + str(self.total) + " (kb)")
+        if self.feedback is not None and self.total > (self.lastReport + (self.length * 0.1)):
+            self.feedback.setProgressText('Total: ' + str(self.total / 1000) + " (kb)")
+            self.lastReport = self.total
         pass
 
     def __enter__(self):
