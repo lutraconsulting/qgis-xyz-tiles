@@ -144,6 +144,8 @@ class GitHub:
     def isOptionsOk(folder, user, repository, feedback, ghPassword=None):
         #Cria ou pega o repositório atual.
         repo = GitHub.getRepository(folder, user, repository, ghPassword, feedback)
+        if not repo:
+            return False
         GitHub.configUser(repo, user)
         if repo.git.status("--porcelain"):
             response = QMessageBox.question(None, "Local repository is not clean.",

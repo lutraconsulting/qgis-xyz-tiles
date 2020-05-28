@@ -423,7 +423,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
     OUTPUT_DIR_TMP = None
 
-    version = '2.3.0'
+    version = '2.4.0'
 
     found_git = ''
 

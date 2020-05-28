@@ -56,19 +56,18 @@ class MappiaPublisherPlugin(object):
     def initProcessing(self):
         self.provider = MappiaPublisherProvider()
         QgsApplication.processingRegistry().addProvider(self.provider)
-        icon = os.path.join(os.path.dirname(__file__), "icon.png")
 
-        self.shareAction = QAction(QIcon(icon), u"Share your maps", iface.mainWindow())
+        self.shareAction = QAction(QIcon(os.path.join(os.path.dirname(__file__), "icon_share.png")), u"Share your maps", iface.mainWindow())
         self.shareAction.triggered.connect(self.publishCallback)
         iface.addPluginToWebMenu(u"&Mappia", self.shareAction)
         iface.addToolBarIcon(self.shareAction)
 
-        self.viewAction = QAction(QIcon(icon), u"View shared maps", iface.mainWindow())
+        self.viewAction = QAction(QIcon(os.path.join(os.path.dirname(__file__), "icon_view.png")), u"View shared maps", iface.mainWindow())
         self.viewAction.triggered.connect(self.viewMapsCallback)
         iface.addPluginToWebMenu(u"&Mappia", self.viewAction)
         iface.addToolBarIcon(self.viewAction)
 
-        self.reportAction = QAction(QIcon(icon), u"Feedback report", iface.mainWindow())
+        self.reportAction = QAction(QIcon(os.path.join(os.path.dirname(__file__), "icon_report.png")), u"Feedback report", iface.mainWindow())
         self.reportAction.triggered.connect(self.getReport)
         iface.addPluginToWebMenu(u"&Mappia", self.reportAction)
         iface.addToolBarIcon(self.reportAction)
