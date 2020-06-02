@@ -107,8 +107,6 @@ class GitHub:
         from git import Repo
         from git import InvalidGitRepositoryError
 
-
-
         # #Não está funcionando a validação #FIXME Repository creation verification is not working (Modify the create Repo function to verify the creation)
         # #feedback.pushConsoleInfo(user + ' at ' + repository)
         # if not GitHub.existsRepository(user, repository):
@@ -124,7 +122,7 @@ class GitHub:
             else:
                 repoSize = ''
             feedback.pushConsoleInfo("Cloning git repository: " + GitHub.getGitUrl(user, repository) + "\nPlease wait, it will download all maps in your repository. " + repoSize)
-            repo = Repo.clone_from(GitHub.getGitUrl(user, repository), folder, recursive=True)
+            repo = GitInteractive.cloneRepo(user, repository, folder, feedback)#Repo.clone_from(GitHub.getGitUrl(user, repository), folder, recursive=True, progress=GitHub.getGitProgressReport(feedback))
             assert (os.path.exists(folder))
             assert(repo)
         else:
@@ -142,41 +140,44 @@ class GitHub:
 
     @staticmethod
     def isOptionsOk(folder, user, repository, feedback, ghPassword=None):
-        #Cria ou pega o repositório atual.
-        repo = GitHub.getRepository(folder, user, repository, ghPassword, feedback)
-        if not repo:
-            return False
-        GitHub.configUser(repo, user)
-        if repo.git.status("--porcelain"):
-            response = QMessageBox.question(None, "Local repository is not clean.",
-                                 "The folder have local changes, we need to fix to continue.\nClick 'DISCARD' to discard changes, 'YES' to commit changes, otherwise click 'CANCEL' to cancel and resolve manually.",
-                                 buttons=(QMessageBox.Discard | QMessageBox.Yes | QMessageBox.Cancel),
-                                 defaultButton=QMessageBox.Discard)
-            if response == QMessageBox.Yes:
-                feedback.pushConsoleInfo("Adding all files in folder")
-                GitHub.addFiles(repo, user, repository)
-                feedback.pushConsoleInfo("Adding all files in folder")
-                repo.git.commit(m="QGIS - Adding all files in folder " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
-                feedback.pushConsoleInfo("QGIS - Sending changes to Github")
-                GitHub.pushChanges(repo, user, repository, ghPassword)
-            elif response == QMessageBox.Discard:
-                repo.git.clean("-df")
-                repo.git.checkout('--', '.')
-            else:
-                feedback.pushConsoleInfo("Error: Local repository is not clean.\nPlease commit the changes made to local repository before run.\nUse: git add * and git commit -m \"MSG\"")
+        try :
+            #Cria ou pega o repositório atual.
+            repo = GitHub.getRepository(folder, user, repository, ghPassword, feedback)
+            if not repo:
                 return False
-        return True
+            GitHub.configUser(repo, user)
+            if repo.git.status("--porcelain"):
+                response = QMessageBox.question(None, "Local repository is not clean.",
+                                     "The folder have local changes, we need to fix to continue.\nClick 'DISCARD' to discard changes, 'YES' to commit changes, otherwise click 'CANCEL' to cancel and resolve manually.",
+                                     buttons=(QMessageBox.Discard | QMessageBox.Yes | QMessageBox.Cancel),
+                                     defaultButton=QMessageBox.Discard)
+                if response == QMessageBox.Yes:
+                    feedback.pushConsoleInfo("Adding all files in folder")
+                    GitHub.addFiles(repo, user, repository, feedback)
+                    feedback.pushConsoleInfo("Adding all files in folder")
+                    GitHub.commit(repo, m="QGIS - Adding all files in folder " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+                    feedback.pushConsoleInfo("QGIS - Sending changes to Github")
+                    GitHub.pushChanges(repo, user, repository, ghPassword)
+                elif response == QMessageBox.Discard:
+                    repo.git.clean("-df")
+                    repo.git.checkout('--', '.')
+                else:
+                    feedback.pushConsoleInfo("Error: Local repository is not clean.\nPlease commit the changes made to local repository before run.\nUse: git add * and git commit -m \"MSG\"")
+                    return False
+            return True
+        except Exception as ex:
+            feedback.pushConsoleInfo("Canceled due to: {0}".format(ex))
+            return False
 
     @staticmethod
     def tryPullRepository(repo, user, repository, feedback):
         GitHub.configUser(repo, user)
         try:
             feedback.pushConsoleInfo("Git: Pulling your repository current state.")
-            repo.git.pull("-s recursive", "-X ours", GitHub.getGitUrl(user, repository), "master")
+            UTILS.runLongTask(repo.git.pull, feedback, 'Pease wait, pulling changes.', 30, "-s recursive", "-X ours", GitHub.getGitUrl(user, repository), "master")
+            UTILS.runLongTask(repo.git.fetch, feedback, 'Please wait, fetching changes.', 30, GitHub.getGitUrl(user, repository), "master")
             feedback.pushConsoleInfo("Git: Doing checkout.")
-            repo.git.fetch(GitHub.getGitUrl(user, repository), "master")
-            feedback.pushConsoleInfo("Git: Doing checkout.")
-            repo.git.checkout("--ours")
+            UTILS.runLongTask(repo.git.checkout, feedback, 'Please wait, doing checkout', 30, "--ours")
         except:
             pass
 
@@ -219,17 +220,16 @@ class GitHub:
         return (curUser, curPass)
 
     @staticmethod
-    def addFiles(repo, user, repository):
-        originName = "mappia"
-        try:
-            repo.git.remote("add", originName, GitHub.getGitUrl(user, repository))
-        except:
-            repo.git.remote("set-url", originName, GitHub.getGitUrl(user, repository))
-        repo.git.add(all=True)  # Adiciona todos arquivos
+    def addFiles(repo, user, repository, feedback):
+        return GitInteractive.addFiles(repo, user, repository, feedback)
 
     @staticmethod
-    def pushChanges(repo, user, repository, password):
-        return repo.git.push(GitHub.getGitPassUrl(user, repository, password), "master:refs/heads/master")
+    def gitCommit(repo, msg, feedback):
+        return GitInteractive.gitCommit(repo, msg, feedback)
+
+    @staticmethod
+    def pushChanges(*args, **kwargs):
+        return GitInteractive.pushChanges(*args, **kwargs)
 
     @staticmethod
     def publishTilesToGitHub(folder, user, repository, feedback, version, password=None):
@@ -242,7 +242,7 @@ class GitHub:
         repo.git.config("credential.helper", " ", "store")
         GitHub.tryPullRepository(repo, user, repository, feedback) #Danilo
         feedback.pushConsoleInfo('Git: Add all generated tiles to your repository.')
-        GitHub.addFiles(repo, user, repository)
+        GitHub.addFiles(repo, user, repository, feedback)
         #feedback.pushConsoleInfo("Git: Mergin.")
         #repo.git.merge("-s recursive", "-X ours")
         #feedback.pushConsoleInfo("Git: Pushing changes.")
@@ -251,13 +251,13 @@ class GitHub:
             feedback.pushConsoleInfo("No changes, nothing to commit.")
             return None
         feedback.pushConsoleInfo("Git: Committing changes.")
-        repo.git.commit(m="QGIS - " + now.strftime("%d/%m/%Y %H:%M:%S") + " version: " + version)
+        GitHub.gitCommit(repo, "QGIS - " + now.strftime("%d/%m/%Y %H:%M:%S") + " version: " + version, feedback)
         # feedback.pushConsoleInfo("CREATING TAG")
         # tag = now.strftime("%Y%m%d-%H%M%S")
         # new_tag = repo.create_tag(tag, message='Automatic tag "{0}"'.format(tag))
         # repo.remotes[originName].push(new_tag)
         feedback.pushConsoleInfo("Git: Pushing modifications to remote repository.")
-        GitHub.pushChanges(repo, user, repository, password)
+        GitHub.pushChanges(repo, user, repository, password, feedback)
         return None
 
     @staticmethod
@@ -442,7 +442,7 @@ class GitHub:
                     response.raise_for_status()
 
         file_size = os.path.getsize(uploadFile)
-        feedback.setProgressText("  Uploading %s of size %s (kb)" % (basename, str(file_size)))
+        feedback.setProgressText("  Uploading %s of size %s (MB)" % (basename, str(round(file_size / 10e4)/10e2)))
 
         url = '{0}?name={1}'.format(uploadUrl, basename)
 
@@ -502,3 +502,30 @@ class _ProgressFileReader(object):
 
     def __getattr__(self, attr):
         return getattr(self._stream, attr)
+
+class GitInteractive() :
+
+    @staticmethod
+    def cloneRepo(user, repository, folder, feedback):
+        from git import Repo
+        return UTILS.runLongTask(Repo.clone_from, feedback, waitMessage="Please wait to complete the download.",
+                                   secondsReport=15, url=GitHub.getGitUrl(user, repository), to_path=folder,
+                                   recursive=True)
+
+    @staticmethod
+    def pushChanges(repo, user, repository, password, feedback):
+        return UTILS.runLongTask(repo.git.push, feedback, 'Please wait, uploading changes.', 30,
+                                          GitHub.getGitPassUrl(user, repository, password), "master:refs/heads/master")
+
+    @staticmethod
+    def gitCommit(repo, msg, feedback):
+        return UTILS.runLongTask(repo.git.commit, feedback, 'Please wait, uploading changes.', 30, m=msg)
+
+    @staticmethod
+    def addFiles(repo, user, repository, feedback):
+        originName = "mappia"
+        try:
+            repo.git.remote("add", originName, GitHub.getGitUrl(user, repository))
+        except:
+            repo.git.remote("set-url", originName, GitHub.getGitUrl(user, repository))
+        return UTILS.runLongTask(repo.git.add, feedback, waitMessage='Please wait, identifying changes on your repository.', secondsReport=30, all=True) # Adiciona todos arquivos

@@ -1,5 +1,5 @@
 import re
-
+import time
 import math
 import os
 import unicodedata
@@ -9,6 +9,8 @@ from urllib.parse import urlencode
 import requests
 from xml.sax.saxutils import escape
 from zipfile import ZipFile
+from qgis.PyQt.QtCore import QTimer
+from qgis.PyQt.QtWidgets import QMessageBox
 from qgis.core import (QgsProject, QgsCoordinateTransform, QgsMessageLog, QgsVectorLayer, QgsRasterLayer)
 
 import random
@@ -48,6 +50,12 @@ class UTILS:
                     total = total + os.path.getsize(filePath)
         return total
 
+    @staticmethod
+    def checkForCanceled(feedback, msg='Cancelling'):
+        if feedback.isCanceled():
+            feedback.pushConsoleInfo(msg)
+            raise Exception("User canceled the plugin execution.")
+
     #Danilo //Danilo return a  TemporaryFile when works
     #Danilo o zip precisa deletar
     @staticmethod
@@ -78,6 +86,31 @@ class UTILS:
             else:
                 return zipFile
         return None
+
+
+    @staticmethod
+    def runLongTask(function, feedback, waitMessage="Please Wait", secondsReport=60, *args, **kwArgs):
+        from concurrent import futures
+        # feedback.setProgress(1)
+        stepTimer = 0.5
+        totalTime = 0
+        with futures.ThreadPoolExecutor(max_workers=1) as executor:
+            job = executor.submit(function, *args, **kwArgs)
+            elapsedTime = 0
+            while job.done() == False:
+                time.sleep(stepTimer)
+                elapsedTime = elapsedTime + stepTimer
+                totalTime = totalTime + stepTimer
+                if elapsedTime > secondsReport:
+                    cancelMsg = "\nCancelling, please wait the current step to finish gracefully." if feedback.isCanceled() else ''
+                    feedback.pushConsoleInfo("Elapsed " + str(round(totalTime)) + "s: " + waitMessage + cancelMsg)
+                    elapsedTime = 0
+                # if canCancelNow and feedback.isCanceled():
+                #     feedback.pushConsoleInfo("Job starting to cancel.")
+                #     job.cancel()
+            feedback.pushConsoleInfo("Elapsed " + str(round(totalTime)) + "s on this step.")
+            # UTILS.checkForCanceled(feedback)
+            return job.result()
 
     """
     Use safer names.
@@ -173,3 +206,20 @@ class UTILS:
                     return exe_file
 
         return None
+
+class UserInterrupted(Exception):
+    pass
+
+# class TimedMessageBox(QMessageBox):
+#     def __init__(self, timeout, message, callback):
+#         super(TimedMessageBox, self).__init__()
+#         self.timeout = timeout
+#         self.callback = callback
+#
+#     def intervalCallback(self):
+#         self.callback()
+#         QTimer().singleShot(self.timeout*1000, self.intervalCallback)
+#
+#     def showEvent(self, event):
+#         QTimer().singleShot(self.timeout*1000, self.intervalCallback)
+#         super(TimedMessageBox, self).showEvent(event)
