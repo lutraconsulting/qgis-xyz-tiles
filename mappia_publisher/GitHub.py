@@ -139,7 +139,7 @@ class GitHub:
         return repo
 
     @staticmethod
-    def isOptionsOk(folder, user, repository, feedback, ghPassword=None):
+    def isOptionsOk(folder, user, repository, feedback, ghPassword=None, mustAskUser=False):
         try :
             #Cria ou pega o repositório atual.
             repo = GitHub.getRepository(folder, user, repository, ghPassword, feedback)
@@ -147,23 +147,36 @@ class GitHub:
                 return False
             GitHub.configUser(repo, user)
             if repo.git.status("--porcelain"):
-                response = QMessageBox.question(None, "Local repository is not clean.",
+                response = not mustAskUser or QMessageBox.question(None, "Local repository is not clean.",
                                      "The folder have local changes, we need to fix to continue.\nClick 'DISCARD' to discard changes, 'YES' to commit changes, otherwise click 'CANCEL' to cancel and resolve manually.",
                                      buttons=(QMessageBox.Discard | QMessageBox.Yes | QMessageBox.Cancel),
                                      defaultButton=QMessageBox.Discard)
-                if response == QMessageBox.Yes:
+                if not mustAskUser or response == QMessageBox.Yes:
+                    feedback.pushConsoleInfo("Pulling remote repository changes to your directory.")
+                    GitHub.tryPullRepository(repo, user, repository, feedback)  # Danilo
                     feedback.pushConsoleInfo("Adding all files in folder")
                     GitHub.addFiles(repo, user, repository, feedback)
                     feedback.pushConsoleInfo("Adding all files in folder")
-                    GitHub.commit(repo, m="QGIS - Adding all files in folder " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+                    GitHub.gitCommit(repo, msg="QGIS - Adding all files in folder " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"), feedback=feedback)
                     feedback.pushConsoleInfo("QGIS - Sending changes to Github")
-                    GitHub.pushChanges(repo, user, repository, ghPassword)
+                    # try:
+                    #     UTILS.runLongTask(repo.git.pull, feedback, 'Pease wait, pulling changes.', 30)
+                    # except:
+                    #     pass
+                    GitHub.pushChanges(repo, user, repository, ghPassword, feedback)
                 elif response == QMessageBox.Discard:
                     repo.git.clean("-df")
                     repo.git.checkout('--', '.')
                 else:
                     feedback.pushConsoleInfo("Error: Local repository is not clean.\nPlease commit the changes made to local repository before run.\nUse: git add * and git commit -m \"MSG\"")
                     return False
+            else:
+                try:
+                    GitHub.tryPullRepository(repo, user, repository, feedback)
+                    feedback.pushConsoleInfo("Git: Checking out changes.")
+                    repo.git.checkout('--', '.')
+                except:
+                    pass
             return True
         except Exception as ex:
             feedback.pushConsoleInfo("Canceled due to: {0}".format(ex))
@@ -173,8 +186,10 @@ class GitHub:
     def tryPullRepository(repo, user, repository, feedback):
         GitHub.configUser(repo, user)
         try:
-            feedback.pushConsoleInfo("Git: Pulling your repository current state.")
-            UTILS.runLongTask(repo.git.pull, feedback, 'Pease wait, pulling changes.', 30, "-s recursive", "-X ours", GitHub.getGitUrl(user, repository), "master")
+            feedback.pushConsoleInfo("Git: Pulling remote repository current state.")
+            # UTILS.runLongTask(repo.git.pull, feedback, 'Pease wait, pulling changes.', 30, " -s recursive -X ours " + GitHub.getGitUrl(user, repository) + "master")
+            UTILS.runLongTask(repo.git.pull, feedback, 'Pease wait, pulling changes.', 30, "-s", "recursive", "-X", "ours", GitHub.getGitUrl(user, repository), "master")
+            feedback.pushConsoleInfo("Before fetch changes.")
             UTILS.runLongTask(repo.git.fetch, feedback, 'Please wait, fetching changes.', 30, GitHub.getGitUrl(user, repository), "master")
             feedback.pushConsoleInfo("Git: Doing checkout.")
             UTILS.runLongTask(repo.git.checkout, feedback, 'Please wait, doing checkout', 30, "--ours")
@@ -182,13 +197,14 @@ class GitHub:
             pass
 
     @staticmethod
-    def createRepo(ghRepository, ghUser, ghPass):
+    def createRepo(ghRepository, ghUser, ghPass, feedback):
         payload = {
             'name': ghRepository,
             'description': 'Repository cointaining maps of the mappia publisher.',
             'branch': 'master',
             'auto_init': 'true'
         }
+        feedback.pushConsoleInfo("Creating the new repository: " + ghRepository)
         resp = requests.post(GitHub.githubApi + 'user/repos', auth=(ghUser, ghPass), data=json.dumps(payload))
         if resp.status_code == 201:
             sleep(1)
@@ -206,10 +222,13 @@ class GitHub:
             url = 'https://github.com/login/oauth/authorize?redirect_uri=https://csr.ufmg.br/imagery/get_key.php&client_id=10b28a388b0e66e87cee&login=' + curUser + '&scope=read:user%20repo&state=' + state
             credentials = GitHub.getCredentials(state)
             webbrowser.open(url, 1)
+            isFirstOpen = True
             while not credentials:
                 sleep(1)
+                auxMsg = '' if isFirstOpen else '\n\nWaiting validation, re-openning the authorization github page.\nPlease login on a Github account to continue.'
+                isFirstOpen = False
                 response = QMessageBox.question(None, "Waiting credentials validation",
-                    "Click 'YES' to continue or 'NO' to cancel.")
+                    "We openned the github link for authorization.\nClick 'YES' to continue or 'NO' to cancel." + auxMsg)
                 if (response != QMessageBox.Yes):
                     return (None, None)
 
@@ -228,8 +247,8 @@ class GitHub:
         return GitInteractive.gitCommit(repo, msg, feedback)
 
     @staticmethod
-    def pushChanges(*args, **kwargs):
-        return GitInteractive.pushChanges(*args, **kwargs)
+    def pushChanges(repo, user, repository, password, feedback):
+        return GitInteractive.pushChanges(repo, user, repository, password, feedback)
 
     @staticmethod
     def publishTilesToGitHub(folder, user, repository, feedback, version, password=None):
@@ -269,55 +288,53 @@ class GitHub:
         else:
             return None
 
-    @staticmethod
-    def getAccessToken(curUser, curPass):
-        def isNotToken(content):
-            return not re.match(r'^[a-z0-9]{40}$', content)
-
-        def createTokenFromPass(user, password):
-            params = {
-                "scopes": ["repo", "write:org"],
-                "note": "Mappia Access (" + str(random.uniform(0, 1) * 100000) + ")"
-            }
-            resp = requests.post(url=GitHub.githubApi + 'authorizations', headers={'content-type': 'application/json'}, auth=(user, password), data=json.dumps(params))
-            if resp.status_code == HTTPStatus.CREATED:
-                return json.loads(resp.text)["token"]
-            elif resp.status_code == HTTPStatus.UNPROCESSABLE_ENTITY:
-                #deveria tentar mais uma vez
-                return None
-            elif resp.status_code == HTTPStatus.UNAUTHORIZED:
-                QMessageBox.warning(None, "Mappia Publisher Error", "Failed to login, please check if the entered username/password is valid at (https://github.com/login)")
-                raise Exception("Error: Failed to login, please Verify the entered username/password.")
-            else:
-                QMessageBox.warning(None, "Mappia Publisher Error", "Failed to create a new token. Response code: " + str(resp.status_code) + " Content: " + str(resp.text))
-                raise Exception("Error: Failed to create token. Response code: " + str(resp.status_code) + " Content: " + str(resp.text))
-
-        foundToken = None
-        if not GitHub.testLogin(curUser, curPass):
-            QMessageBox.warning(None, "Mappia Publisher Error",
-                                "Failed to login, please check if the entered username/password is valid at (https://github.com/login)")
-            Exception("Error: Failed to login.")
-            foundToken = None
-        elif not isNotToken(curPass) and GitHub.testLogin(curUser, curPass):
-            foundToken = curPass
-        elif GitHub.personal_token and not isNotToken(GitHub.personal_token) and GitHub.testLogin(curUser, GitHub.personal_token):
-            foundToken = GitHub.personal_token
-        elif QMessageBox.question(None, "Key required instead of password.", "Want the mappia to automatically create a key for you? Otherwise please access the link: https://github.com/settings/tokens to create the key.", defaultButton=QMessageBox.Yes) == QMessageBox.Yes:
-            retries = 1
-            token = None
-            while token is None and retries <= 5:
-                token = createTokenFromPass(curUser, curPass)
-                retries = retries + 1
-            if token is None:
-                if QMessageBox.question(None, "The token creation have failed. Want to open the creation link?", defaultButton=QMessageBox.Yes) == QMessageBox.Yes:
-                    webbrowser.open_new('https://github.com/settings/tokens')
-                raise Exception("Error: Something goes wrong creating the token. Opening the browser, please create your token manually at https://github.com/settings/tokens and enable enable the scope group 'repo'. Please copy the resulting text.")
-            GitHub.personal_token = token
-            QMessageBox.warning(None, "Information", "Created the following token, please copy it to use later '" + token + "'.")
-            foundToken = token
-        else:
-            foundToken = None
-        return foundToken
+    # @staticmethod
+    # def getAccessToken(curUser, curPass):
+    #     def isNotToken(content):
+    #         return not re.match(r'^[a-z0-9]{40}$', content)
+    #     # def createTokenFromPass(user, password):
+    #     #     params = {
+    #     #         "scopes": ["repo", "write:org"],
+    #     #         "note": "Mappia Access (" + str(random.uniform(0, 1) * 100000) + ")"
+    #     #     }
+    #     #     resp = requests.post(url=GitHub.githubApi + 'authorizations', headers={'content-type': 'application/json'}, auth=(user, password), data=json.dumps(params))
+    #     #     if resp.status_code == HTTPStatus.CREATED:
+    #     #         return json.loads(resp.text)["token"]
+    #     #     elif resp.status_code == HTTPStatus.UNPROCESSABLE_ENTITY:
+    #     #         #deveria tentar mais uma vez
+    #     #         return None
+    #     #     elif resp.status_code == HTTPStatus.UNAUTHORIZED:
+    #     #         QMessageBox.warning(None, "Mappia Publisher Error", "Failed to login, please check if the entered username/password is valid at (https://github.com/login)")
+    #     #         raise Exception("Error: Failed to login, please Verify the entered username/password.")
+    #     #     else:
+    #     #         QMessageBox.warning(None, "Mappia Publisher Error", "Failed to create a new token. Response code: " + str(resp.status_code) + " Content: " + str(resp.text))
+    #     #         raise Exception("Error: Failed to create token. Response code: " + str(resp.status_code) + " Content: " + str(resp.text))
+    #     foundToken = None
+    #     if not GitHub.testLogin(curUser, curPass):
+    #         QMessageBox.warning(None, "Mappia Publisher Error",
+    #                             "Failed to login, please check if the entered username/password is valid at (https://github.com/login)")
+    #         Exception("Error: Failed to login.")
+    #         foundToken = None
+    #     elif not isNotToken(curPass) and GitHub.testLogin(curUser, curPass):
+    #         foundToken = curPass
+    #     elif GitHub.personal_token and not isNotToken(GitHub.personal_token) and GitHub.testLogin(curUser, GitHub.personal_token):
+    #         foundToken = GitHub.personal_token
+    #     # elif QMessageBox.question(None, "Key required instead of password.", "Want the mappia to automatically create a key for you? Otherwise please access the link: https://github.com/settings/tokens to create the key.", defaultButton=QMessageBox.Yes) == QMessageBox.Yes:
+    #     #     retries = 1
+    #     #     token = None
+    #     #     while token is None and retries <= 5:
+    #     #         token = createTokenFromPass(curUser, curPass)
+    #     #         retries = retries + 1
+    #     #     if token is None:
+    #     #         if QMessageBox.question(None, "The token creation have failed. Want to open the creation link?", defaultButton=QMessageBox.Yes) == QMessageBox.Yes:
+    #     #             webbrowser.open_new('https://github.com/settings/tokens')
+    #     #         raise Exception("Error: Something goes wrong creating the token. Opening the browser, please create your token manually at https://github.com/settings/tokens and enable enable the scope group 'repo'. Please copy the resulting text.")
+    #     #     GitHub.personal_token = token
+    #     #     QMessageBox.warning(None, "Information", "Created the following token, please copy it to use later '" + token + "'.")
+    #     #     foundToken = token
+    #     else:
+    #         foundToken = None
+    #     return foundToken
 
 
     @staticmethod
@@ -442,7 +459,7 @@ class GitHub:
                     response.raise_for_status()
 
         file_size = os.path.getsize(uploadFile)
-        feedback.setProgressText("  Uploading %s of size %s (MB)" % (basename, str(round(file_size / 10e4)/10e2)))
+        feedback.setProgressText("  Uploading %s of size %s (MB)" % (basename, str(file_size / 10e6)))
 
         url = '{0}?name={1}'.format(uploadUrl, basename)
 

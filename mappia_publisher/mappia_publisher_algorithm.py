@@ -376,7 +376,7 @@ def install_git():
 
     tmpDir = tempfile.mkdtemp()
     gitUrl = "https://github.com/git-for-windows/git/releases/download/v2.25.1.windows.1/PortableGit-2.25.1-64-bit.7z.exe"
-    QMessageBox.information(None, "Starting GIT download", "This step will take some time, it depends on your internet speed.\nClick 'OK' to continue.", defaultButton=QMessageBox.Ok, buttons=QMessageBox.Ok)
+    # QMessageBox.information(None, "Starting GIT download", "This step will take some time, it depends on your internet speed.\nClick 'OK' to continue.", defaultButton=QMessageBox.Ok, buttons=QMessageBox.Ok)
     selfExtractor = download_file(gitUrl, tmpDir)
     portableGit = os.path.join(tmpDir, "portablegit")
     if (not os.path.isfile(selfExtractor)):
@@ -411,6 +411,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     EXTENT = 'EXTENT'
     LAYER_ATTRIBUTE = 'LAYER_ATTRIBUTE'
     INCLUDE_DOWNLOAD = 'INCLUDE_DOWNLOAD'
+    ASK_USER = 'ASK_USER'
 
     GITHUB_REPOSITORY = 'GITHUB_REPOSITORY'
     GITHUB_USER = 'GITHUB_USER'
@@ -422,9 +423,11 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     WIDTH = 256
     HEIGHT = 256
 
+    mustAskUser = True
+
     OUTPUT_DIR_TMP = None
 
-    version = '2.5.0'
+    version = '2.6.0'
 
     found_git = ''
 
@@ -525,6 +528,14 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         ghPassParameter.setFlags(ghPassParameter.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
         self.addParameter(ghPassParameter)
 
+        askUserConfirmation = QgsProcessingParameterBoolean(
+            self.ASK_USER,
+            self.tr('Ask user confirmation before each step.'),
+            defaultValue=options['ask_user']
+        )
+        askUserConfirmation.setFlags(askUserConfirmation.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(askUserConfirmation)
+
         outputDirParameter = QgsProcessingParameterFolderDestination(
             self.OUTPUT_DIRECTORY,
             self.tr('Output directory'),
@@ -571,106 +582,106 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         return isinstance(layer, QgsVectorLayer) and layer.geometryType() == QgsWkbTypes.GeometryType.PointGeometry
 
     def generate(self, writer, parameters, context, feedback):
-        try:
-            feedback.setProgress(1)
-            feedback.setProgressText("This step can take a long time, and despite the job is going, sometime sometimes the interface can freezes.\nThe job is still going, please wait and do not close the application until it finishes.")
-            min_zoom = 0
-            max_zoom = self.parameterAsInt(parameters, self.ZOOM_MAX, context)
-            outputFormat = QImage.Format_ARGB32
-            layerAttr = "1" #TODO self.parameterAsString(parameters, self.LAYER_ATTRIBUTE, context)
-            cellType = 'int32'
-            nullValue = -128
-            includeDl = self.parameterAsBool(parameters, self.INCLUDE_DOWNLOAD, context)
-            ghUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
-            ghPassword = self.parameterAsString(parameters, self.GITHUB_PASS, context)
-            ghRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
-            mapOperation = OperationType.RGBA #OperationType(self.parameterAsEnum(parameters, self.OPERATION, context))
-            wgs_crs = QgsCoordinateReferenceSystem('EPSG:4326')
-            dest_crs = QgsCoordinateReferenceSystem('EPSG:3857')
-            layers = self.parameterAsLayerList(parameters, self.LAYERS, context)
-            metatilesCount = self.getTotalTiles(wgs_crs, min_zoom, max_zoom, layers)
-            if includeDl:
-                GitHub.createDownloadTag(ghUser, ghRepository, ghPassword, feedback)
-                #Danilo precisa de commit?
-            #FIXME Dar um update e um push
-            progress = 0
-            percentageByLayer = 90 / len(layers)
-            toPercentage = 1
-            for layer in layers:
-                feedback.setProgress(toPercentage)
-                layerTitle = layer.name()
-                UTILS.checkForCanceled(feedback)
-                feedback.setProgressText("Publishing layer: " + layerTitle)
-                if self.isPointLayer(layer):
-                    feedback.setProgressText("Publishing a shape of point geometry")
-                    if writer.processPointsLayer(feedback, layer, layerAttr, wgs_crs):
-                        writer.write_custom_capabilities(layerTitle, layerAttr, "csv")
-                    else:
-                        feedback.setProgressText("Error publishing map")
+        # try:
+        feedback.setProgress(1)
+        feedback.setProgressText("This step can take a long time, and despite the job is going, sometime sometimes the interface can freezes.\nThe job is still going, please wait and do not close the application until it finishes.")
+        min_zoom = 0
+        max_zoom = self.parameterAsInt(parameters, self.ZOOM_MAX, context)
+        outputFormat = QImage.Format_ARGB32
+        layerAttr = "1" #TODO self.parameterAsString(parameters, self.LAYER_ATTRIBUTE, context)
+        cellType = 'int32'
+        nullValue = -128
+        includeDl = self.parameterAsBool(parameters, self.INCLUDE_DOWNLOAD, context)
+        ghUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
+        ghPassword = self.parameterAsString(parameters, self.GITHUB_PASS, context)
+        ghRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
+        mapOperation = OperationType.RGBA #OperationType(self.parameterAsEnum(parameters, self.OPERATION, context))
+        wgs_crs = QgsCoordinateReferenceSystem('EPSG:4326')
+        dest_crs = QgsCoordinateReferenceSystem('EPSG:3857')
+        layers = self.parameterAsLayerList(parameters, self.LAYERS, context)
+        metatilesCount = self.getTotalTiles(wgs_crs, min_zoom, max_zoom, layers)
+        if includeDl:
+            GitHub.createDownloadTag(ghUser, ghRepository, ghPassword, feedback)
+            #Danilo precisa de commit?
+        #FIXME Dar um update e um push
+        progress = 0
+        percentageByLayer = 90 / len(layers)
+        toPercentage = 1
+        for layer in layers:
+            feedback.setProgress(toPercentage)
+            layerTitle = layer.name()
+            UTILS.checkForCanceled(feedback)
+            feedback.setProgressText("Publishing layer: " + layerTitle)
+            if self.isPointLayer(layer):
+                feedback.setProgressText("Publishing a shape of point geometry")
+                if writer.processPointsLayer(feedback, layer, layerAttr, wgs_crs):
+                    writer.write_custom_capabilities(layerTitle, layerAttr, "csv")
                 else:
-                    feedback.setProgressText("Generating tiles to publish online")
-                    layerRenderSettings = self.createLayerRenderSettings(layer, dest_crs, outputFormat)
-                    metatiles_by_zoom = self.createLayerMetatiles(wgs_crs, layer, min_zoom, max_zoom)
-                    for zoom in range(min_zoom, max_zoom + 1):
-                        UTILS.checkForCanceled(feedback)
-                        feedback.pushConsoleInfo('Generating tiles for zoom level: %s' % zoom)
-                        for i, metatile in enumerate(metatiles_by_zoom[zoom]):
-                            if feedback.isCanceled():
-                                break
-                            transformContext = context.transformContext()
-                            mapRendered = self.renderMetatile(metatile, dest_crs, outputFormat, layerRenderSettings,
-                                                              transformContext, wgs_crs)
-                            for r, c, tile in metatile.tiles:
-                                tile_img = mapRendered.copy(self.WIDTH * r, self.HEIGHT * c, self.WIDTH, self.HEIGHT)
-                                writer.write_tile(tile, tile_img, mapOperation.getName(), layerTitle, layerAttr)
-                            progress = progress + 1
-                            feedback.setProgress(toPercentage + (percentageByLayer * (progress / metatilesCount)))
-                    # writer.writeLegendPng(layer, layerTitle, layerAttr, mapOperation.getName())
-                    downloadLink = None #Zip file and upload it to download.
-                    if includeDl:
-                        curFileDl = UTILS.runLongTask(UTILS.generateZipLayer, feedback, 'Please wait, creating a zipfile of your map.', 30, layer)
-                        UTILS.checkForCanceled(feedback)
-                        if curFileDl is not None:
-                            downloadLink = GitHub.addReleaseFile(ghUser, ghPassword, ghRepository, 2, True, os.path.abspath(curFileDl.name), layer, feedback)
-                            if downloadLink is not None:
-                                feedback.pushConsoleInfo("Map download link: " + downloadLink)
-                            # curFileDl.close()
-                            # os.remove(curFileDl.name) #está dando erro algumas vezes ao remover o arquivo temporário.
-                            curFileDl = None
-                    writer.write_description(layerTitle, layerAttr, cellType, nullValue, mapOperation.getName())
-                    writer.write_capabilities(layer, layerTitle, layerAttr, max_zoom, downloadLink)
-                    writer.writeLegendJson(layer, layerTitle, layerAttr, mapOperation.getName())
-                    writer.writeThumbnail(UTILS.getMapExtent(layer, dest_crs), layerTitle, layerAttr, mapOperation.getName(), layerRenderSettings)
-                    toPercentage = toPercentage + percentageByLayer
-            writer.setCapabilitiesDefaultMaxZoom()
-            feedback.setProgressText('Finished map tile generation. Uploading changes to Github.')
-            feedback.setProgress(94)
-            GitHub.publishTilesToGitHub(writer.folder, ghUser, ghRepository, feedback, self.version, ghPassword)
-            feedback.setProgress(96)
-            storeUrl = GitHub.getGitUrl(ghUser, ghRepository)
-            #FIXME Space in the map name will cause errors.
-            feedback.pushConsoleInfo("All the maps in this repository:\n(Please only use maps with the same zoom level.)\n")
-            allLayers = WMSCapabilities.getAllLayers(Path(os.path.join(writer.folder, "getCapabilities.xml")).read_text(), layerAttr)
-            allPointLayers = WMSCapabilities.getAllCustomLayers(Path(os.path.join(writer.folder, "getCapabilities.xml")).read_text(), layerAttr)
-            feedback.pushConsoleInfo("https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl
-                + "/" + "&remotemap=" + ",".join(allLayers) + "&points=" + ",".join(allPointLayers) + "\n")
-            feedback.pushConsoleInfo("Current published Maps:\n")
-            generatedMaps = ["GH:" + UTILS.normalizeName(layer.name()) + ";" + layerAttr for layer in layers if not self.isPointLayer(layer)]
-            pointLayers = ["GH:" + UTILS.normalizeName(layer.name()) for layer in layers if self.isPointLayer(layer)]
-            curMapsUrl = "https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl + "/"
-            if len(generatedMaps) > 0:
-                curMapsUrl += "&remotemap=" + ",".join(generatedMaps)
-            if len(pointLayers) > 0:
-                curMapsUrl += "&points=" + ",".join(pointLayers)
-            feedback.setProgressText("Copy the link above in any browser to see your maps online. ")
-            feedback.pushConsoleInfo(curMapsUrl)
-            feedback.setProgress(100)
-            writer.close()
-            webbrowser.open_new(curMapsUrl)
-            #QMessageBox.warning(None, "Maps published online", "Congratulations your maps are now available online.\nThe shareable link was generated, and will be shown in your browser.")
-            return {"MAPS_URL": curMapsUrl, 'PUBLISHED_MAPS': generatedMaps, 'REPOSITORY_MAPS': allLayers}
-        except UserInterrupted as ex:
-            return {"CANCELED": ex}
+                    feedback.setProgressText("Error publishing map")
+            else:
+                feedback.setProgressText("Generating tiles to publish online")
+                layerRenderSettings = self.createLayerRenderSettings(layer, dest_crs, outputFormat)
+                metatiles_by_zoom = self.createLayerMetatiles(wgs_crs, layer, min_zoom, max_zoom)
+                for zoom in range(min_zoom, max_zoom + 1):
+                    UTILS.checkForCanceled(feedback)
+                    feedback.pushConsoleInfo('Generating tiles for zoom level: %s' % zoom)
+                    for i, metatile in enumerate(metatiles_by_zoom[zoom]):
+                        if feedback.isCanceled():
+                            break
+                        transformContext = context.transformContext()
+                        mapRendered = self.renderMetatile(metatile, dest_crs, outputFormat, layerRenderSettings,
+                                                          transformContext, wgs_crs)
+                        for r, c, tile in metatile.tiles:
+                            tile_img = mapRendered.copy(self.WIDTH * r, self.HEIGHT * c, self.WIDTH, self.HEIGHT)
+                            writer.write_tile(tile, tile_img, mapOperation.getName(), layerTitle, layerAttr)
+                        progress = progress + 1
+                        feedback.setProgress(toPercentage + (percentageByLayer * (progress / metatilesCount)))
+                # writer.writeLegendPng(layer, layerTitle, layerAttr, mapOperation.getName())
+                downloadLink = None #Zip file and upload it to download.
+                if includeDl:
+                    curFileDl = UTILS.runLongTask(UTILS.generateZipLayer, feedback, 'Please wait, creating a zipfile of your map.', 30, layer)
+                    UTILS.checkForCanceled(feedback)
+                    if curFileDl is not None:
+                        downloadLink = GitHub.addReleaseFile(ghUser, ghPassword, ghRepository, 2, True, os.path.abspath(curFileDl.name), layer, feedback)
+                        if downloadLink is not None:
+                            feedback.pushConsoleInfo("Map download link: " + downloadLink)
+                        # curFileDl.close()
+                        # os.remove(curFileDl.name) #está dando erro algumas vezes ao remover o arquivo temporário.
+                        curFileDl = None
+                writer.write_description(layerTitle, layerAttr, cellType, nullValue, mapOperation.getName())
+                writer.write_capabilities(layer, layerTitle, layerAttr, max_zoom, downloadLink)
+                writer.writeLegendJson(layer, layerTitle, layerAttr, mapOperation.getName())
+                writer.writeThumbnail(UTILS.getMapExtent(layer, dest_crs), layerTitle, layerAttr, mapOperation.getName(), layerRenderSettings)
+                toPercentage = toPercentage + percentageByLayer
+        writer.setCapabilitiesDefaultMaxZoom()
+        feedback.setProgressText('Finished map tile generation. Uploading changes to Github.')
+        feedback.setProgress(94)
+        GitHub.publishTilesToGitHub(writer.folder, ghUser, ghRepository, feedback, self.version, ghPassword)
+        feedback.setProgress(96)
+        storeUrl = GitHub.getGitUrl(ghUser, ghRepository)
+        #FIXME Space in the map name will cause errors.
+        feedback.pushConsoleInfo("All the maps in this repository:\n(Please only use maps with the same zoom level.)\n")
+        allLayers = WMSCapabilities.getAllLayers(Path(os.path.join(writer.folder, "getCapabilities.xml")).read_text(), layerAttr)
+        allPointLayers = WMSCapabilities.getAllCustomLayers(Path(os.path.join(writer.folder, "getCapabilities.xml")).read_text(), layerAttr)
+        feedback.pushConsoleInfo("https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl
+            + "/" + "&remotemap=" + ",".join(allLayers) + "&points=" + ",".join(allPointLayers) + "\n")
+        feedback.pushConsoleInfo("Current published Maps:\n")
+        generatedMaps = ["GH:" + UTILS.normalizeName(layer.name()) + ";" + layerAttr for layer in layers if not self.isPointLayer(layer)]
+        pointLayers = ["GH:" + UTILS.normalizeName(layer.name()) for layer in layers if self.isPointLayer(layer)]
+        curMapsUrl = "https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl + "/"
+        if len(generatedMaps) > 0:
+            curMapsUrl += "&remotemap=" + ",".join(generatedMaps)
+        if len(pointLayers) > 0:
+            curMapsUrl += "&points=" + ",".join(pointLayers)
+        feedback.setProgressText("Copy the link above in any browser to see your maps online. ")
+        feedback.pushConsoleInfo(curMapsUrl)
+        feedback.setProgress(100)
+        writer.close()
+        webbrowser.open_new(curMapsUrl)
+        #QMessageBox.warning(None, "Maps published online", "Congratulations your maps are now available online.\nThe shareable link was generated, and will be shown in your browser.")
+        return {"MAPS_URL": curMapsUrl, 'PUBLISHED_MAPS': generatedMaps, 'REPOSITORY_MAPS': allLayers}
+        # except UserInterrupted as ex:
+        #     return {"CANCELED": ex}
 
     #Return the rendered map (QImage) for the metatile zoom level.
     def renderMetatile(self, metatile, dest_crs, outputFormat, renderSettings, transformContext, sourceCrs):
@@ -742,20 +753,21 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     def prepareAlgorithm(self, parameters, context, feedback):
         feedback.pushConsoleInfo("Started: Verify the input options.")
         curUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
+        self.mustAskUser = self.parameterAsBool(parameters, self.ASK_USER, context)
         gitRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
         ghPassword = self.parameterAsString(parameters, self.GITHUB_PASS, context)
         self.OUTPUT_DIR_TMP = self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context)
         feedback.pushConsoleInfo("Automatic Step: Checking remote repository.")
-        if not GitHub.existsRepository(curUser, gitRepository) and QMessageBox.Yes != QMessageBox.question(
+        if not GitHub.existsRepository(curUser, gitRepository) and (not self.mustAskUser or QMessageBox.Yes != QMessageBox.question(
                 None,
                 "Repository not found",
                 "The repository was not found, want to create a new repository?",
                 defaultButton=QMessageBox.Yes,
-                buttons=(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)):
+                buttons=(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel))):
             feedback.pushConsoleInfo("Error: A valid repository is needed please enter a valid repository name or create a new one.")
             return False
-        elif not GitHub.existsRepository(curUser, gitRepository) and not GitHub.createRepo(gitRepository, curUser, ghPassword):
-            if QMessageBox.question(
+        elif not GitHub.existsRepository(curUser, gitRepository) and not GitHub.createRepo(gitRepository, curUser, ghPassword, feedback):
+            if not self.mustAskUser or QMessageBox.question(
                     None,
                     "The creation have failed. Want to open the link https://github.com/new to create a new repository?",
                     defaultButton=QMessageBox.Yes) == QMessageBox.Yes:
@@ -776,7 +788,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         feedback.pushConsoleInfo("Automatic Step: Configuring git parameters.")
         if self.parameterAsString(parameters, self.GIT_EXECUTABLE, context):
             GitHub.prepareEnvironment(self.parameterAsString(parameters, self.GIT_EXECUTABLE, context))
-        if not GitHub.isOptionsOk(self.OUTPUT_DIR_TMP, curUser, gitRepository, feedback, ghPassword):
+        if not GitHub.isOptionsOk(self.OUTPUT_DIR_TMP, curUser, gitRepository, feedback, ghPassword, self.mustAskUser):
             feedback.setProgressText("Error: Canceling the execution, please select another output folder.")
             return False
         feedback.pushConsoleInfo("Automatic Step: Saving option changes.")
@@ -788,7 +800,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context),
             self.OUTPUT_DIR_TMP,
             self.parameterAsString(parameters, self.GITHUB_PASS, context),
-            self.parameterAsBool(parameters, self.INCLUDE_DOWNLOAD, context)
+            self.parameterAsBool(parameters, self.INCLUDE_DOWNLOAD, context),
+            self.parameterAsBool(parameters, self.ASK_USER, context)
         )
         feedback.pushConsoleInfo("Automatic Step: Changes Saved.")
         return True
