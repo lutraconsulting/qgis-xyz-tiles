@@ -427,7 +427,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
     OUTPUT_DIR_TMP = None
 
-    version = '2.6.0'
+    version = '2.7.0'
 
     found_git = ''
 
@@ -758,7 +758,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         ghPassword = self.parameterAsString(parameters, self.GITHUB_PASS, context)
         self.OUTPUT_DIR_TMP = self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context)
         feedback.pushConsoleInfo("Automatic Step: Checking remote repository.")
-        if not GitHub.existsRepository(curUser, gitRepository) and (not self.mustAskUser or QMessageBox.Yes != QMessageBox.question(
+        if not GitHub.existsRepository(curUser, gitRepository) and self.mustAskUser and (QMessageBox.Yes != QMessageBox.question(
                 None,
                 "Repository not found",
                 "The repository was not found, want to create a new repository?",

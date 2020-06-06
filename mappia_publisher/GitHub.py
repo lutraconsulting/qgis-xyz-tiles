@@ -228,7 +228,7 @@ class GitHub:
                 auxMsg = '' if isFirstOpen else '\n\nWaiting validation, re-openning the authorization github page.\nPlease login on a Github account to continue.'
                 isFirstOpen = False
                 response = QMessageBox.question(None, "Waiting credentials validation",
-                    "We openned the github link for authorization.\nClick 'YES' to continue or 'NO' to cancel." + auxMsg)
+                    "Click 'YES' to continue or 'NO' to cancel.\nWe openned the github authentication link." + auxMsg)
                 if (response != QMessageBox.Yes):
                     return (None, None)
 
