@@ -213,29 +213,61 @@ class GitHub:
             return False
 
     @staticmethod
-    def getGitCredentials(curUser, curPass):
+    def runLongTask(function, feedback, waitMessage="Please Wait", secondsReport=60, *args, **kwArgs):
+        from concurrent import futures
+        # feedback.setProgress(1)
+        stepTimer = 0.5
+        totalTime = 0
+        with futures.ThreadPoolExecutor(max_workers=1) as executor:
+            job = executor.submit(function, *args, **kwArgs)
+            elapsedTime = 0
+            while job.done() == False:
+                time.sleep(stepTimer)
+                elapsedTime = elapsedTime + stepTimer
+                totalTime = totalTime + stepTimer
+                if elapsedTime > secondsReport:
+                    cancelMsg = "\nCancelling, please wait the current step to finish gracefully." if feedback.isCanceled() else ''
+                    feedback.pushConsoleInfo("Elapsed " + str(round(totalTime)) + "s: " + waitMessage + cancelMsg)
+                    elapsedTime = 0
+                # if canCancelNow and feedback.isCanceled():
+                #     feedback.pushConsoleInfo("Job starting to cancel.")
+                #     job.cancel()
+            feedback.pushConsoleInfo("Elapsed " + str(round(totalTime)) + "s on this step.")
+            # UTILS.checkForCanceled(feedback)
+            return job.result()
+
+
+    @staticmethod
+    def getGitCredentials(curUser, curPass, mustAskUser):
         state = UTILS.randomString()
         if (not curUser):
             curUser = ''
-        if (curPass is None or not curPass or not curUser) or (GitHub.testLogin(curUser, curPass) == False and QMessageBox.question(
-                None, "Credentials required", "Please inform your credentials, could we open login link for you?") == QMessageBox.Yes):
+        if (curPass is None or not curPass or not curUser) or (GitHub.testLogin(curUser, curPass) == False and (mustAskUser or QMessageBox.question(
+                None, "Credentials required", "Please inform your credentials, could we open login link for you?") == QMessageBox.Yes)):
             url = 'https://github.com/login/oauth/authorize?redirect_uri=https://csr.ufmg.br/imagery/get_key.php&client_id=10b28a388b0e66e87cee&login=' + curUser + '&scope=read:user%20repo&state=' + state
-            credentials = GitHub.getCredentials(state)
+            credentials = {
+                'value': None
+            }
+            GitHub.getCredentials(state)
             webbrowser.open(url, 1)
             isFirstOpen = True
-            while not credentials:
+            def checkLoginValidation(btn, qntCallbacks):
+                credentials['value'] = credentials['value'] or GitHub.getCredentials(state)
+                if credentials['value'] and not mustAskUser:
+                    btn.done(0)
+            while not credentials['value']:
                 sleep(1)
                 auxMsg = '' if isFirstOpen else '\n\nWaiting validation, re-openning the authorization github page.\nPlease login on a Github account to continue.'
                 isFirstOpen = False
-                response = QMessageBox.question(None, "Please confirm credentials at Github site to continue",
-                    "Click 'YES' to continue or 'NO' to cancel.\nOpenning the github authentication link in browser." + auxMsg)
-                if (response != QMessageBox.Yes):
-                    return (None, None)
-
-                credentials = GitHub.getCredentials(state)
-                if response == QMessageBox.Yes and not credentials:
+                response = CustomMessageBox.showWithCallback(2000,
+                      "Click 'YES' to continue or 'NO' to cancel.\nOpenning the github authentication link in browser." + auxMsg,
+                      "Please confirm credentials at Github site to continue", checkLoginValidation, buttons=QMessageBox.Yes | QMessageBox.No)
+                credentials['value'] = credentials['value'] or GitHub.getCredentials(state)
+                if response == QMessageBox.Yes and not credentials['value']:
                     webbrowser.open(url, 2)
-            return (credentials['user'], credentials['token'])
+                elif response != QMessageBox.Yes and not credentials['value']:
+                    return (None, None)
+            return (credentials['value']['user'], credentials['value']['token'])
         return (curUser, curPass)
 
     @staticmethod
@@ -519,6 +551,43 @@ class _ProgressFileReader(object):
 
     def __getattr__(self, attr):
         return getattr(self._stream, attr)
+
+class CustomMessageBox(QMessageBox):
+    def __init__(self, *__args):
+        QMessageBox.__init__(self)
+        self.timeout = 0
+        self.callback = None
+        self.currentTime = 0
+
+    def showEvent(self, QShowEvent):
+        self.currentTime = 0
+        if self.autoclose:
+            self.startTimer(self.timeout)
+
+    def timerEvent(self, event):
+        # try:
+        if self.isHidden():
+            self.killTimer(event.timerId())
+            self.deleteLayer()
+        else:
+            self.currentTime += 1
+            self.callback(self, self.currentTime)
+        # except:
+        #     self.quit()
+        # if self.currentTime >= self.timeout:
+        #     self.done(0)
+
+    @staticmethod
+    def showWithCallback(timeoutMsCallback, message, title, callback, icon=QMessageBox.Information, buttons=QMessageBox.Ok):
+        w = CustomMessageBox()
+        w.autoclose = True
+        w.callback = callback
+        w.timeout = timeoutMsCallback
+        w.setText(message)
+        w.setWindowTitle(title)
+        w.setIcon(icon)
+        w.setStandardButtons(buttons)
+        w.exec_()
 
 class GitInteractive() :
 

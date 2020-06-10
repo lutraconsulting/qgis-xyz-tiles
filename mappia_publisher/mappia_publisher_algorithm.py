@@ -354,14 +354,14 @@ class OperationType(Enum):
     def __str__(self):
         return self.name
 
-def install_git():
+def install_git(mustAskUser):
     def userConfirmed():
         return QMessageBox.Yes == QMessageBox.question(None, "Required GIT executable was not found",
                              "Click 'YES' to start download and continue, otherwise please select the executable manually.",
                              defaultButton=QMessageBox.Yes,
                              buttons=(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel))
 
-    if (("Windows" in platform.system() or "CYGWIN_NT" in platform.system()) and userConfirmed()) == False:
+    if (("Windows" in platform.system() or "CYGWIN_NT" in platform.system()) and (mustAskUser or userConfirmed())) == False:
         return ''
     def download_file(url, toDir):
         local_filename = os.path.join(toDir, url.split('/')[-1])
@@ -423,11 +423,9 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     WIDTH = 256
     HEIGHT = 256
 
-    mustAskUser = True
-
     OUTPUT_DIR_TMP = None
 
-    version = '2.8.0'
+    version = '2.9.0'
 
     found_git = ''
 
@@ -579,9 +577,9 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         return total
 
     def preprocessParameters(self, parameters):
-        parameters[self.GITHUB_USER], parameters[self.GITHUB_PASS] = GitHub.getGitCredentials(parameters[self.GITHUB_USER], parameters[self.GITHUB_PASS])
+        parameters[self.GITHUB_USER], parameters[self.GITHUB_PASS] = GitHub.getGitCredentials(parameters[self.GITHUB_USER], parameters[self.GITHUB_PASS], parameters[self.ASK_USER])
         if (parameters[self.GITHUB_USER] and parameters[self.GITHUB_PASS]):
-            parameters[self.GIT_EXECUTABLE] = self.getGitExe(parameters[self.GIT_EXECUTABLE])
+            parameters[self.GIT_EXECUTABLE] = self.getGitExe(parameters[self.GIT_EXECUTABLE], parameters[self.ASK_USER])
         return parameters
 
     def isPointLayer(self, layer):
@@ -733,9 +731,9 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             pass #Is not a raster
         return settings
 
-    def getGitExe(self, gitExe):
+    def getGitExe(self, gitExe, mustAskUser):
         if (not gitExe or not os.path.isfile(gitExe)) and (not 'GIT_PYTHON_GIT_EXECUTABLE' in os.environ or not os.path.isfile(os.environ['GIT_PYTHON_GIT_EXECUTABLE'])) and (not self.found_git or os.path.isfile(self.found_git)):
-            gitExe = install_git()
+            gitExe = install_git(mustAskUser)
         return gitExe
 
 
@@ -759,12 +757,12 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     def prepareAlgorithm(self, parameters, context, feedback):
         feedback.pushConsoleInfo("Started: Verify the input options.")
         curUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
-        self.mustAskUser = self.parameterAsBool(parameters, self.ASK_USER, context)
+        mustAskUser = self.parameterAsBool(parameters, self.ASK_USER, context)
         gitRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
         ghPassword = self.parameterAsString(parameters, self.GITHUB_PASS, context)
         self.OUTPUT_DIR_TMP = self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context)
         feedback.pushConsoleInfo("Automatic Step: Checking remote repository.")
-        if not GitHub.existsRepository(curUser, gitRepository) and self.mustAskUser and (QMessageBox.Yes != QMessageBox.question(
+        if (not GitHub.existsRepository(curUser, gitRepository)) and mustAskUser and (QMessageBox.Yes != QMessageBox.question(
                 None,
                 "Repository not found",
                 "The repository was not found, want to create a new repository?",
@@ -773,7 +771,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             feedback.pushConsoleInfo("Error: A valid repository is needed please enter a valid repository name or create a new one.")
             return False
         elif not GitHub.existsRepository(curUser, gitRepository) and not GitHub.createRepo(gitRepository, curUser, ghPassword, feedback):
-            if not self.mustAskUser or QMessageBox.question(
+            if not mustAskUser or QMessageBox.question(
                     None,
                     "The creation have failed. Want to open the link https://github.com/new to create a new repository?",
                     defaultButton=QMessageBox.Yes) == QMessageBox.Yes:
@@ -794,7 +792,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         feedback.pushConsoleInfo("Automatic Step: Configuring git parameters.")
         if self.parameterAsString(parameters, self.GIT_EXECUTABLE, context):
             GitHub.prepareEnvironment(self.parameterAsString(parameters, self.GIT_EXECUTABLE, context))
-        if not GitHub.isOptionsOk(self.OUTPUT_DIR_TMP, curUser, gitRepository, feedback, ghPassword, self.mustAskUser):
+        if not GitHub.isOptionsOk(self.OUTPUT_DIR_TMP, curUser, gitRepository, feedback, ghPassword, mustAskUser):
             feedback.setProgressText("Error: Canceling the execution, please select another output folder.")
             return False
         feedback.pushConsoleInfo("Automatic Step: Saving option changes.")

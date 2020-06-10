@@ -195,21 +195,24 @@ class UTILS:
     # python version that comes with QGIS
     @staticmethod
     def getenv_system(varname, default=''):
-        import os
-        import win32api
-        import win32con
-        v = default
         try:
-            rkey = win32api.RegOpenKey(win32con.HKEY_LOCAL_MACHINE,
-                                       'SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment')
+            import os
+            import win32api
+            import win32con
+            v = default
             try:
-                v = str(win32api.RegQueryValueEx(rkey, varname)[0])
-                v = win32api.ExpandEnvironmentStrings(v)
-            except:
-                pass
-        finally:
-            win32api.RegCloseKey(rkey)
-        return v
+                rkey = win32api.RegOpenKey(win32con.HKEY_LOCAL_MACHINE,
+                                           'SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment')
+                try:
+                    v = str(win32api.RegQueryValueEx(rkey, varname)[0])
+                    v = win32api.ExpandEnvironmentStrings(v)
+                except:
+                    pass
+            finally:
+                win32api.RegCloseKey(rkey)
+            return v
+        except:
+            return []
 
     @staticmethod
     def is_exe(fpath):
