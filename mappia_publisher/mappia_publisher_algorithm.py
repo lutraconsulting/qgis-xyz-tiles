@@ -427,7 +427,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
     OUTPUT_DIR_TMP = None
 
-    version = '2.7.0'
+    version = '2.8.0'
 
     found_git = ''
 
@@ -465,7 +465,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterString(
                 self.GITHUB_REPOSITORY,
-                self.tr('Repository name (or map group name)'),
+                self.tr('* Repository name (or map group name)'),
                 optional=False,
                 defaultValue=options['gh_repository']
             )
@@ -475,7 +475,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         # geometry.
         layerParam = QgsProcessingParameterMultipleLayers(
             self.LAYERS,
-            self.tr('Maps to display online'),
+            self.tr('* Maps to display online'),
             QgsProcessing.TypeMapLayer
             #, defaultValue=[layer.id() for layer in iface.mapCanvas().layers()]#[layer.dataProvider().dataSourceUri(False) for layer in iface.mapCanvas().layers()]
         )
@@ -551,6 +551,12 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             return options['git_exe']
         elif UTILS.which("git.exe") is not None:
             return UTILS.which("git.exe")
+        elif UTILS.which("bin\\git.exe") is not None:
+            return UTILS.which("bin\\git.exe")
+
+        for curPath in ['C:\\Program Files\\Git\\bin\\git.exe', 'C:\\Program Files (x86)\\SmartGit\\git\\bin\\git.exe', os.environ['USERPROFILE'] if 'USERPROFILE' in os.environ else '' + '\\AppData\\Local\\Programs\\Git\\git.exe', os.environ['USERPROFILE'] if 'USERPROFILE' in os.environ else '' + '\\AppData\\Local\\Programs\\Git\\bin\\git.exe']:
+            if UTILS.is_exe(curPath):
+                return curPath
         else:
             return ''
 
@@ -584,7 +590,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     def generate(self, writer, parameters, context, feedback):
         # try:
         feedback.setProgress(1)
-        feedback.setProgressText("This step can take a long time, and despite the job is going, sometime sometimes the interface can freezes.\nThe job is still going, please wait and do not close the application until it finishes.")
+        feedback.setProgressText("This step can take a long time, and despite the job is going, sometime the interface can freezes.\nThe job is still going, please wait and do not close the application until it finishes.")
         min_zoom = 0
         max_zoom = self.parameterAsInt(parameters, self.ZOOM_MAX, context)
         outputFormat = QImage.Format_ARGB32

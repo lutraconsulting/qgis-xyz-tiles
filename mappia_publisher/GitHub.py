@@ -227,8 +227,8 @@ class GitHub:
                 sleep(1)
                 auxMsg = '' if isFirstOpen else '\n\nWaiting validation, re-openning the authorization github page.\nPlease login on a Github account to continue.'
                 isFirstOpen = False
-                response = QMessageBox.question(None, "Waiting credentials validation",
-                    "Click 'YES' to continue or 'NO' to cancel.\nWe openned the github authentication link." + auxMsg)
+                response = QMessageBox.question(None, "Please confirm credentials at Github site to continue",
+                    "Click 'YES' to continue or 'NO' to cancel.\nOpenning the github authentication link in browser." + auxMsg)
                 if (response != QMessageBox.Yes):
                     return (None, None)
 
@@ -459,7 +459,7 @@ class GitHub:
                     response.raise_for_status()
 
         file_size = os.path.getsize(uploadFile)
-        feedback.setProgressText("  Uploading %s of size %s (MB)" % (basename, str(file_size / 10e6)))
+        feedback.setProgressText("  Uploading %s of size %s (MB)" % (basename, str(file_size / 10e5)))
 
         url = '{0}?name={1}'.format(uploadUrl, basename)
 

@@ -189,20 +189,47 @@ class UTILS:
         lat_deg = math.degrees(lat_rad)
         return (lat_deg, lon_deg)
 
+    # This function gets a system variable
+    # it was necessary to use this instead of os.environ["PATH"] because QGIS overwrites the path variable
+    # the win32 libraries appear not to be part of the standard python install, but they are included in the
+    # python version that comes with QGIS
+    @staticmethod
+    def getenv_system(varname, default=''):
+        import os
+        import win32api
+        import win32con
+        v = default
+        try:
+            rkey = win32api.RegOpenKey(win32con.HKEY_LOCAL_MACHINE,
+                                       'SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment')
+            try:
+                v = str(win32api.RegQueryValueEx(rkey, varname)[0])
+                v = win32api.ExpandEnvironmentStrings(v)
+            except:
+                pass
+        finally:
+            win32api.RegCloseKey(rkey)
+        return v
+
+    @staticmethod
+    def is_exe(fpath):
+        return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
+
     # https://stackoverflow.com/questions/377017/test-if-executable-exists-in-python/12611523
     @staticmethod
     def which(program):
-        def is_exe(fpath):
-            return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
-
         fpath, fname = os.path.split(program)
         if fpath:
-            if is_exe(program):
+            if UTILS.is_exe(program):
                 return program
         else:
             for path in os.environ["PATH"].split(os.pathsep):
                 exe_file = os.path.join(path, program)
-                if is_exe(exe_file):
+                if UTILS.is_exe(exe_file):
+                    return exe_file
+            for path in UTILS.getenv_system("PATH").split(os.pathsep):
+                exe_file = os.path.join(path, program)
+                if UTILS.is_exe(exe_file):
                     return exe_file
 
         return None
