@@ -164,12 +164,24 @@ class DirectoryWriter:
         layerRenderer = clonedLayer.renderer()
         renderContext = QgsRenderContext()
         renderContext.setUseAdvancedEffects(True)
-        renderContext.setFlags(QgsRenderContext.Flag.Antialiasing)
+        # renderContext.setFlags(QgsRenderContext.Flag.Antialiasing)
         imageList = list()
         iconField = QgsField('icon_url', QVariant.String, 'text') #Danilo não vou verificar se o mapa ja tem esse atributo
         feedback.setProgressText("Adding a column 'icon_url'")
         clonedLayer.startEditing()
+        def removeIconUrlField():
+            fields = clonedLayer.fields()
+            foundInd = -1
+            for i in range(len(fields)):
+                if fields.at(i).name() == 'icon_url':
+                    foundInd = i
+                    break
+            if foundInd != -1:
+                clonedLayer.dataProvider().deleteAttributes([foundInd])
+                clonedLayer.updateFields()
+        removeIconUrlField()
         addedField = clonedLayer.addAttribute(iconField)
+        clonedLayer.updateFields()
         if (addedField == False):
             feedback.pushConsoleInfo("Warning: " + layer.name() + " canceled failed to create a column to store the point symbol.")
             return False
@@ -425,7 +437,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
     OUTPUT_DIR_TMP = None
 
-    version = '2.9.0'
+    version = '2.9.1'
 
     found_git = ''
 
@@ -707,7 +719,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     #Configure the rendering settings for the WMS tiles.
     def createLayerRenderSettings(self, layer, dest_crs, outputFormat):
         settings = QgsMapSettings()
-        settings.setFlag(QgsMapSettings.Flag.Antialiasing, on=False)
+        # settings.setFlag(QgsMapSettings.Flag.Antialiasing, on=False)
         settings.setFlag(QgsMapSettings.Flag.UseRenderingOptimization, on=False)
         settings.setFlag(QgsMapSettings.Flag.UseAdvancedEffects, on=False)
         settings.setOutputImageFormat(outputFormat)

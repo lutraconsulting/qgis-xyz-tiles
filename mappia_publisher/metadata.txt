@@ -4,9 +4,9 @@
 
 [general]
 name=Mappia Publisher
-qgisMinimumVersion=3.0
+qgisMinimumVersion=3.4.1
 description=Share your maps online (raster and shape) as a profissional. Easily make your QGIS maps online 24/7 (for free, no private server required). (Beta Access, please report any error)
-version=2.9.0
+version=2.9.1
 author=Danilo da Silveira Figueira
 email=danilo@csr.ufmg.br
 
@@ -30,7 +30,8 @@ repository=https://github.com/MappiaEarth/mappia_publisher
 
 hasProcessingProvider=yes
 # Uncomment the following line and add your changelog:
-changelog=Removed all user interactions when asking is off.
+changelog=Fixed
+    Removed all user interactions when asking is off.
     Mandatory fields with '*'.
     Check environment PATH for the 'git' executable.
     Add parameter to ask prevent asking confirmation.
