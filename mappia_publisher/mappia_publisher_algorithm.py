@@ -374,7 +374,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
     OUTPUT_DIR_TMP = None
 
-    version = '2.9.3'
+    version = '2.9.4'
 
     found_git = ''
 
@@ -693,6 +693,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         if len(self.OUTPUT_DIR_TMP) <= 0:
             self.OUTPUT_DIR_TMP = tempfile.mkdtemp()
         feedback.pushConsoleInfo("Automatic Step: Checking remote repository.")
+        if not UTILS.isQgisSupported():
+            feedback.pushConsoleInfo("Warning: This plugin was developped for QGIS 3.x+ please consider update.\n" + (("The identified QGIS Verison is " + UTILS.getQGISversion()) if UTILS.getQGISversion() is not None else "Version could not be idenfied."))
         if (not GitHub.existsRepository(curUser, gitRepository)) and mustAskUser and (QMessageBox.Yes != QMessageBox.question(
                 None,
                 "Repository not found",
@@ -751,7 +753,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         try:
             return self.generate(writer, parameters, context, feedback)
         except Exception as e:
-            reportContent = {'Status': 'Error, publication failed! Reporting error to Mappia development team.', 'version' : self.version, 'error': traceback.format_exc(), 'exception': str(e), 'os': platform.platform()}
+            reportContent = {'Status': 'Error, publication failed! Reporting error to Mappia development team.', "QGIS_version": UTILS.getQGISversion(), 'version': self.version, 'error': traceback.format_exc(), 'exception': str(e), 'os': platform.platform()}
             UTILS.sendReport(reportContent)
             feedback.pushConsoleInfo('Error, publication failed! Reporting error to Mappia development team.')
             raise

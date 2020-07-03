@@ -51,6 +51,21 @@ class UTILS:
         return total
 
     @staticmethod
+    def getQGISversion():
+        try:
+            from qgis.core import Qgis
+            return Qgis.QGIS_VERSION[0]
+        except:
+            return None
+
+    @staticmethod
+    def isQgisSupported():
+        try:
+            return int(UTILS.getQGISversion()) >= 3
+        except:
+            return True
+
+    @staticmethod
     def checkForCanceled(feedback, msg='Cancelling'):
         if feedback.isCanceled():
             feedback.pushConsoleInfo(msg)
