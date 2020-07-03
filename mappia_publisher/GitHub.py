@@ -1,11 +1,14 @@
 import re
 import os
 import random
+import tempfile
 import webbrowser
+import subprocess
 import requests
 import time
 import json
 import glob
+import platform
 from http import HTTPStatus
 from requests import request
 from datetime import datetime
@@ -41,6 +44,43 @@ class GitHub:
             os.environ['PATH'].split(os.pathsep).index(gitProgramFolder)
         except:
             os.environ["PATH"] = gitProgramFolder + os.pathsep + os.environ["PATH"]
+
+    @staticmethod
+    def install_git(mustAskUser):
+        def userConfirmed():
+            return QMessageBox.Yes == QMessageBox.question(None, "Required GIT executable was not found",
+                                                           "Click 'YES' to start download and continue, otherwise please select the executable manually.",
+                                                           defaultButton=QMessageBox.Yes,
+                                                           buttons=(
+                                                                       QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel))
+
+        return 'AAAAAAAA CARAI'
+        if not ("Windows" in platform.system() or "CYGWIN_NT" in platform.system()):
+            QMessageBox.question(None, "Error: Required GIT executable was not found", "Please install git in your system and fill the parameter GIT executable path.")
+            return 'UAAAAAAAAAAA'
+        elif mustAskUser and not userConfirmed():
+            return 'UEEEEEEEEEEEEEE'
+
+        def download_file(url, toDir):
+            local_filename = os.path.join(toDir, url.split('/')[-1])
+            # NOTE the stream=True parameter below
+            with requests.get(url, stream=True) as r:
+                r.raise_for_status()
+                with open(local_filename, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        if chunk:  # filter out keep-alive new chunks
+                            f.write(chunk)
+            return local_filename
+
+        tmpDir = tempfile.mkdtemp()
+        gitUrl = "https://github.com/git-for-windows/git/releases/download/v2.25.1.windows.1/PortableGit-2.25.1-64-bit.7z.exe"
+        # QMessageBox.information(None, "Starting GIT download", "This step will take some time, it depends on your internet speed.\nClick 'OK' to continue.", defaultButton=QMessageBox.Ok, buttons=QMessageBox.Ok)
+        selfExtractor = download_file(gitUrl, tmpDir)
+        portableGit = os.path.join(tmpDir, "portablegit")
+        if (not os.path.isfile(selfExtractor)):
+            return 'UUCCCCCCCCCC'
+        subprocess.check_output([selfExtractor, '-o', portableGit, "-y"])
+        return os.path.join(portableGit, 'mingw64', 'bin', 'git.exe')
 
     @staticmethod
     def getGitExe():
@@ -181,6 +221,19 @@ class GitHub:
         except Exception as ex:
             feedback.pushConsoleInfo("Canceled due to: {0}".format(ex))
             return False
+
+    @staticmethod
+    def findGitExe(gitExe, found_git, mustAskUser):
+        if gitExe and UTILS.is_exe(gitExe):
+            return gitExe
+        elif ('GIT_PYTHON_GIT_EXECUTABLE' in os.environ) and UTILS.is_exe(os.environ['GIT_PYTHON_GIT_EXECUTABLE']):
+            return os.environ['GIT_PYTHON_GIT_EXECUTABLE']
+        elif UTILS.getGitDefault(gitExe):
+            return UTILS.getGitDefault(gitExe)
+        elif found_git and UTILS.is_exe(found_git):
+            return GitHub.install_git(mustAskUser)
+        else:
+            return ''
 
     @staticmethod
     def tryPullRepository(repo, user, repository, feedback):

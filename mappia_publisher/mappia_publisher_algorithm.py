@@ -239,39 +239,6 @@ class DirectoryWriter:
     def setCapabilitiesDefaultMaxZoom(self, ):
         WMSCapabilities.setCapabilitiesDefaultMaxZoom(self.folder)
 
-    def write_description(self, layerTitle, layerAttr, cellTypeName, nullValue, operation):
-        layerTitle = UTILS.normalizeName(layerTitle)
-        cellTypeName = UTILS.normalizeName(cellTypeName)
-        directory = self.getPathForMap(layerTitle, layerAttr.lower())
-        filecsv = "description.csv"
-        csvPath = os.path.join(directory, filecsv)
-        jsonPath = os.path.join(directory, "description.json")
-        if os.path.isfile(csvPath):
-            csvFile = open(csvPath, "r", encoding="utf-8")
-        else:
-            csvFile = io.StringIO("Key*, cell, null, operation, attr,\n-9999, \"\", -1, \"\", nenhuma, ")
-
-        csv_reader = csv.DictReader(csvFile, delimiter=',')
-        line_count = 0
-        elements = [cellTypeName, str(nullValue), operation, layerAttr]
-        for row in csv_reader:
-            curEntry = {
-                'cellType': row[' cell'].strip(),
-                'nullValue': row[' null'].strip(),
-                'operation': row[' operation'].strip(),
-                'attribute': row[' attr'].strip()
-            }
-            if line_count > 0 and curEntry['operation'] != operation and curEntry['attribute'] != layerAttr:
-                # Key *, cell, null, operation, attr,
-                elements.append(curEntry['cellType'])
-                elements.append(curEntry['nullValue'])
-                elements.append(curEntry['operation'])
-                elements.append(curEntry['attribute'])
-            line_count += 1
-        with open(jsonPath, "w", encoding="utf-8") as jsonFile:
-            jsonFile.write(json.dumps(elements))
-        csvFile.close()
-
     '''
     Desenha o thumbnail na projeção final do projeto.
     '''
@@ -310,11 +277,11 @@ class DirectoryWriter:
             img = qgisRenderJob.renderedImage()
             # save the image; e.g. img.save("/Users/myuser/render.png","png")
             img.save(os.path.join(legendFolder, "legend.png"), "png")
-            print("saved")
         qgisRenderJob.finished.connect(savePng)
         qgisRenderJob.start()
 
-    def writeLegendJson(self, layer, mapTitle, mapAttr, operation):
+    @staticmethod
+    def writeLegendJson(legendPath, layer, mapTitle, mapAttr, operation):
         mapTitle = UTILS.normalizeName(mapTitle)
         mapAttr = UTILS.normalizeName(mapAttr)
         result = []
@@ -335,7 +302,7 @@ class DirectoryWriter:
                 label = symbology.label()
                 color = symbology.symbol().color()
                 result.append({"color": [color.red(), color.green(), color.blue()], "title": label})
-        jsonFile = Path(os.path.join(self.getPathForMap(mapTitle, mapAttr, operation), "legend.json"))
+        jsonFile = Path(os.path.join(legendPath, "legend.json"))
         jsonFile.write_text(json.dumps(result), encoding="utf-8")
 
     def close(self):
@@ -365,36 +332,6 @@ class OperationType(Enum):
 
     def __str__(self):
         return self.name
-
-def install_git(mustAskUser):
-    def userConfirmed():
-        return QMessageBox.Yes == QMessageBox.question(None, "Required GIT executable was not found",
-                             "Click 'YES' to start download and continue, otherwise please select the executable manually.",
-                             defaultButton=QMessageBox.Yes,
-                             buttons=(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel))
-
-    if (("Windows" in platform.system() or "CYGWIN_NT" in platform.system()) and (mustAskUser or userConfirmed())) == False:
-        return ''
-    def download_file(url, toDir):
-        local_filename = os.path.join(toDir, url.split('/')[-1])
-        # NOTE the stream=True parameter below
-        with requests.get(url, stream=True) as r:
-            r.raise_for_status()
-            with open(local_filename, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    if chunk:  # filter out keep-alive new chunks
-                        f.write(chunk)
-        return local_filename
-
-    tmpDir = tempfile.mkdtemp()
-    gitUrl = "https://github.com/git-for-windows/git/releases/download/v2.25.1.windows.1/PortableGit-2.25.1-64-bit.7z.exe"
-    # QMessageBox.information(None, "Starting GIT download", "This step will take some time, it depends on your internet speed.\nClick 'OK' to continue.", defaultButton=QMessageBox.Ok, buttons=QMessageBox.Ok)
-    selfExtractor = download_file(gitUrl, tmpDir)
-    portableGit = os.path.join(tmpDir, "portablegit")
-    if (not os.path.isfile(selfExtractor)):
-        return ''
-    subprocess.check_output([selfExtractor, '-o', portableGit, "-y"])
-    return os.path.join(portableGit, 'mingw64', 'bin', 'git.exe')
 
 
 class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
@@ -437,7 +374,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
     OUTPUT_DIR_TMP = None
 
-    version = '2.9.1'
+    version = '2.9.3'
 
     found_git = ''
 
@@ -515,7 +452,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             self.GIT_EXECUTABLE,
             self.tr('Git client executable path.'),
             optional=True,
-            defaultValue=self.getGitDefault(options)
+            defaultValue=UTILS.getGitDefault(options['git_exe'])
         )
         gitExeParameter.setFlags(gitExeParameter.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
         self.addParameter(gitExeParameter)
@@ -552,23 +489,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             optional=True,
             defaultValue=options["folder"]
         )
-        outputDirParameter.setFlags(outputDirParameter.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        outputDirParameter.setFlags(outputDirParameter.flags() | QgsProcessingParameterDefinition.FlagAdvanced | QgsProcessingParameterDefinition.FlagIsModelOutput)
         self.addParameter(outputDirParameter)
-
-
-    def getGitDefault(self, options):
-        if options['git_exe'] and os.path.exists(options['git_exe']):
-            return options['git_exe']
-        elif UTILS.which("git.exe") is not None:
-            return UTILS.which("git.exe")
-        elif UTILS.which("bin\\git.exe") is not None:
-            return UTILS.which("bin\\git.exe")
-
-        for curPath in ['C:\\Program Files\\Git\\bin\\git.exe', 'C:\\Program Files (x86)\\SmartGit\\git\\bin\\git.exe', os.environ['USERPROFILE'] if 'USERPROFILE' in os.environ else '' + '\\AppData\\Local\\Programs\\Git\\git.exe', os.environ['USERPROFILE'] if 'USERPROFILE' in os.environ else '' + '\\AppData\\Local\\Programs\\Git\\bin\\git.exe']:
-            if UTILS.is_exe(curPath):
-                return curPath
-        else:
-            return ''
 
     #Create the metatiles to the given layer in given zoom levels
     def createLayerMetatiles(self, projection, layer, minZoom, maxZoom):
@@ -591,7 +513,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     def preprocessParameters(self, parameters):
         parameters[self.GITHUB_USER], parameters[self.GITHUB_PASS] = GitHub.getGitCredentials(parameters[self.GITHUB_USER], parameters[self.GITHUB_PASS], parameters[self.ASK_USER])
         if (parameters[self.GITHUB_USER] and parameters[self.GITHUB_PASS]):
-            parameters[self.GIT_EXECUTABLE] = self.getGitExe(parameters[self.GIT_EXECUTABLE], parameters[self.ASK_USER])
+            parameters[self.GIT_EXECUTABLE] = GitHub.findGitExe(parameters[self.GIT_EXECUTABLE], self.found_git, parameters[self.ASK_USER])
         return parameters
 
     def isPointLayer(self, layer):
@@ -664,9 +586,9 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                         # curFileDl.close()
                         # os.remove(curFileDl.name) #está dando erro algumas vezes ao remover o arquivo temporário.
                         curFileDl = None
-                writer.write_description(layerTitle, layerAttr, cellType, nullValue, mapOperation.getName())
+                WMSCapabilities.write_description(writer.getPathForMap(layerTitle, layerAttr.lower()), layerTitle, layerAttr, cellType, nullValue, mapOperation.getName()) #Danilo acho q movi
                 writer.write_capabilities(layer, layerTitle, layerAttr, max_zoom, downloadLink)
-                writer.writeLegendJson(layer, layerTitle, layerAttr, mapOperation.getName())
+                writer.writeLegendJson(writer.getPathForMap(layerTitle, layerAttr.lower(), mapOperation.getName()), layer, layerTitle, layerAttr, mapOperation.getName())
                 writer.writeThumbnail(UTILS.getMapExtent(layer, dest_crs), layerTitle, layerAttr, mapOperation.getName(), layerRenderSettings)
                 toPercentage = toPercentage + percentageByLayer
         writer.setCapabilitiesDefaultMaxZoom()
@@ -743,11 +665,6 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             pass #Is not a raster
         return settings
 
-    def getGitExe(self, gitExe, mustAskUser):
-        if (not gitExe or not os.path.isfile(gitExe)) and (not 'GIT_PYTHON_GIT_EXECUTABLE' in os.environ or not os.path.isfile(os.environ['GIT_PYTHON_GIT_EXECUTABLE'])) and (not self.found_git or os.path.isfile(self.found_git)):
-            gitExe = install_git(mustAskUser)
-        return gitExe
-
 
     def checkParameterValues(self, parameters, context):
         min_zoom = 0
@@ -773,6 +690,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         gitRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
         ghPassword = self.parameterAsString(parameters, self.GITHUB_PASS, context)
         self.OUTPUT_DIR_TMP = self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context)
+        if len(self.OUTPUT_DIR_TMP) <= 0:
+            self.OUTPUT_DIR_TMP = tempfile.mkdtemp()
         feedback.pushConsoleInfo("Automatic Step: Checking remote repository.")
         if (not GitHub.existsRepository(curUser, gitRepository)) and mustAskUser and (QMessageBox.Yes != QMessageBox.question(
                 None,
@@ -788,10 +707,11 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                     "The creation have failed. Want to open the link https://github.com/new to create a new repository?",
                     defaultButton=QMessageBox.Yes) == QMessageBox.Yes:
                 webbrowser.open_new("https://github.com/new")
-            feedback.pushConsoleInfo("Error: Failed to create the repository, please create a one at: https://github.com/new")
+            feedback.pushConsoleInfo("Error: Failed to create the repository " + gitRepository + ".\nPlease create a one at: https://github.com/new")
             return False
         feedback.pushConsoleInfo("Automatic Step: Checking git executable.")
         gitExe = self.parameterAsString(parameters, self.GIT_EXECUTABLE, context)
+        feedback.pushConsoleInfo(gitExe)
         if not gitExe or not os.path.isfile(gitExe):
             feedback.pushConsoleInfo("Select your git executable program.\n" + str(
                 gitExe) + "\nIt can be downloadable at: https://git-scm.com/downloads")

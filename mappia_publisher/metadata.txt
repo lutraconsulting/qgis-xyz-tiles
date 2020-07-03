@@ -6,11 +6,14 @@
 name=Mappia Publisher
 qgisMinimumVersion=3.4.1
 description=Share your maps online (raster and shape) as a profissional. Easily make your QGIS maps online 24/7 (for free, no private server required). (Beta Access, please report any error)
-version=2.9.1
+#Dont forget to update the version in mappia_publisher_algorithm.py.
+version=2.9.3
 author=Danilo da Silveira Figueira
 email=danilo@csr.ufmg.br
 
 about=Mappia is an online mapping platform accessible for everyone. Easy and free to share your maps online. (Beta Access, please report any issue)
+    _
+    Tutorial video example: <a href='https://mappia.earth/mappia_publisher/#mappia_video_topics'>https://mappia.earth/mappia_publisher/#mappia_video_topics</a>
     _
     Publish all your maps, and customize an interactive platform.
     Now Raster support with infinite zoom, Point Vectors with access to attributes, share maps by download, and much more.
@@ -30,7 +33,8 @@ repository=https://github.com/MappiaEarth/mappia_publisher
 
 hasProcessingProvider=yes
 # Uncomment the following line and add your changelog:
-changelog=Fixed
+changelog=Tested in Linux that was not finding the git executable.
+    Fixed some issues with older versions.
     Removed all user interactions when asking is off.
     Mandatory fields with '*'.
     Check environment PATH for the 'git' executable.

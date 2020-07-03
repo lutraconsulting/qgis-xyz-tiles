@@ -6,8 +6,10 @@ from qgis.PyQt.QtWidgets import QMessageBox
 import collections
 from pathlib import Path
 import json
+import io
 import os
 import re
+import csv
 
 from qgis.core import (QgsCoordinateReferenceSystem, QgsProject, QgsPointXY, QgsCoordinateTransform, QgsVectorLayer)
 
@@ -436,3 +438,37 @@ class WMSCapabilities:
         else:
             doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities'] = newTileSetDescription
         WMSCapabilities.saveCurrentCapabilities(directory, doc)
+
+
+    @staticmethod
+    def write_description(directory, layerTitle, layerAttr, cellTypeName, nullValue, operation):
+        layerTitle = UTILS.normalizeName(layerTitle)
+        cellTypeName = UTILS.normalizeName(cellTypeName)
+        filecsv = "description.csv"
+        csvPath = os.path.join(directory, filecsv)
+        jsonPath = os.path.join(directory, "description.json")
+        if os.path.isfile(csvPath):
+            csvFile = open(csvPath, "r", encoding="utf-8")
+        else:
+            csvFile = io.StringIO("Key*, cell, null, operation, attr,\n-9999, \"\", -1, \"\", nenhuma, ")
+
+        csv_reader = csv.DictReader(csvFile, delimiter=',')
+        line_count = 0
+        elements = [cellTypeName, str(nullValue), operation, layerAttr]
+        for row in csv_reader:
+            curEntry = {
+                'cellType': row[' cell'].strip(),
+                'nullValue': row[' null'].strip(),
+                'operation': row[' operation'].strip(),
+                'attribute': row[' attr'].strip()
+            }
+            if line_count > 0 and curEntry['operation'] != operation and curEntry['attribute'] != layerAttr:
+                # Key *, cell, null, operation, attr,
+                elements.append(curEntry['cellType'])
+                elements.append(curEntry['nullValue'])
+                elements.append(curEntry['operation'])
+                elements.append(curEntry['attribute'])
+            line_count += 1
+        with open(jsonPath, "w", encoding="utf-8") as jsonFile:
+            jsonFile.write(json.dumps(elements))
+        csvFile.close()
