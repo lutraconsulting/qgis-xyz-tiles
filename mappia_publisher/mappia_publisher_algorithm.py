@@ -374,7 +374,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
     OUTPUT_DIR_TMP = None
 
-    version = '2.9.4'
+    version = '2.9.5'
 
     found_git = ''
 
@@ -516,8 +516,31 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             parameters[self.GIT_EXECUTABLE] = GitHub.findGitExe(parameters[self.GIT_EXECUTABLE], self.found_git, parameters[self.ASK_USER])
         return parameters
 
-    def isPointLayer(self, layer):
-        return isinstance(layer, QgsVectorLayer) and layer.geometryType() == QgsWkbTypes.GeometryType.PointGeometry
+    def isPointLayer(self, layer, feedback):
+        try:
+            return isinstance(layer, QgsVectorLayer) and layer.geometryType() == QgsWkbTypes.GeometryType.PointGeometry
+        except Exception as e:
+            # try: #test in older qgis.
+            #     return isinstance(layer, QgsVectorLayer) and (layer.geometryType() == QgsWkbTypes.Type.Point
+            #                                                   or layer.geometryType() == QgsWkbTypes.Type.MultiPoint
+            #                                                   or layer.geometryType() == QgsWkbTypes.Type.MultiPointZ
+            #                                                   or layer.geometryType() == QgsWkbTypes.Type.MultiPointM
+            #                                                   or layer.geometryType() == gsWkbTypes.Type.MultiPointZM
+            #                                                   or layer.geometryType() == QgsWkbTypes.Type.MultiPoint25D
+            #                                                   or layer.geometryType() == QgsWkbTypes.Type.MultiPoint
+            #                                                   or layer.geometryType() == QgsWkbTypes.Type.PointZ
+            #                                                   or layer.geometryType() == QgsWkbTypes.Type.MultiPointZ
+            #                                                   or layer.geometryType() == QgsWkbTypes.Type.PointM
+            #                                                   or layer.geometryType() == QgsWkbTypes.Type.MultiPointM
+            #                                                   or layer.geometryType() == QgsWkbTypes.Type.PointZM
+            #                                                   or layer.geometryType() == QgsWkbTypes.Type.MultiPointZM
+            #                                                   or layer.geometryType() == QgsWkbTypes.Type.Point25D
+            #                                                   or layer.geometryType() == QgsWkbTypes.Type.MultiPoint25D)
+            # except:
+            #     return False
+            feedback.pushConsoleInfo("Warning: Error to identify the Geometry type " + str(e))
+            return False
+
 
     def generate(self, writer, parameters, context, feedback):
         # try:
@@ -550,7 +573,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             layerTitle = layer.name()
             UTILS.checkForCanceled(feedback)
             feedback.setProgressText("Publishing layer: " + layerTitle)
-            if self.isPointLayer(layer):
+            if self.isPointLayer(layer, feedback):
                 feedback.setProgressText("Publishing a shape of point geometry")
                 if writer.processPointsLayer(feedback, layer, layerAttr, wgs_crs):
                     writer.write_custom_capabilities(layerTitle, layerAttr, "csv")
@@ -604,8 +627,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         feedback.pushConsoleInfo("https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl
             + "/" + "&remotemap=" + ",".join(allLayers) + "&points=" + ",".join(allPointLayers) + "\n")
         feedback.pushConsoleInfo("Current published Maps:\n")
-        generatedMaps = ["GH:" + UTILS.normalizeName(layer.name()) + ";" + layerAttr for layer in layers if not self.isPointLayer(layer)]
-        pointLayers = ["GH:" + UTILS.normalizeName(layer.name()) for layer in layers if self.isPointLayer(layer)]
+        generatedMaps = ["GH:" + UTILS.normalizeName(layer.name()) + ";" + layerAttr for layer in layers if not self.isPointLayer(layer, feedback)]
+        pointLayers = ["GH:" + UTILS.normalizeName(layer.name()) for layer in layers if self.isPointLayer(layer, feedback)]
         curMapsUrl = "https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl + "/"
         if len(generatedMaps) > 0:
             curMapsUrl += "&remotemap=" + ",".join(generatedMaps)
