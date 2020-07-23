@@ -253,7 +253,7 @@ class GitHub:
     def createRepo(ghRepository, ghUser, ghPass, feedback):
         payload = {
             'name': ghRepository,
-            'description': 'Repository maps published in mappia.\n\n# All maps in this repository:\n\nhttps://maps.csr.ufmg.br/calculator/?map=&queryid=152&listRepository=Repository&storeurl='+GitHub.getGitUrl(ghUser, ghRepository),
+            'description': 'This repository link: https://maps.csr.ufmg.br/calculator/?map=&queryid=152&listRepository=Repository&storeurl='+GitHub.getGitUrl(ghUser, ghRepository),
             'branch': 'master',
             'auto_init': 'true'
         }

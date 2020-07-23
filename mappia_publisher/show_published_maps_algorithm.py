@@ -63,39 +63,19 @@ class ShowPublishedMapsAlgorithm(QgsProcessingAlgorithm):
 
     def processAlgorithm(self, parameters, context, feedback):
         ghUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
-        layerAttr = "1"
         ghRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
         storeUrl = GitHub.getGitUrl(ghUser, ghRepository)
         capabilitiesTxt = requests.get(url='https://raw.githubusercontent.com/'+ghUser+'/'+ghRepository+'/master/getCapabilities.xml')
-        print(capabilitiesTxt.text)
-        print("\n----------------------------------\n")
-        foundMaps = []
-        mapsUrl = "Sorry, no maps were found."
+        mapsUrl = "Invalid repository."
         if not GitHub.existsRepository(ghUser, ghRepository):
             feedback.pushConsoleInfo("Sorry, the selected repository was not found. (" + storeUrl + ")")
+        if capabilitiesTxt.status_code == HTTPStatus.NOT_FOUND:
+            feedback.pushConsoleInfo("Sorry, no map is shared from this repository.")
         elif capabilitiesTxt.status_code == HTTPStatus.OK:
-            foundMaps = WMSCapabilities.getAllLayers(capabilitiesTxt.text)
-            if len(foundMaps) <= 0:
-                feedback.pushConsoleInfo("Sorry, there are no maps in this repository.")
-                return
-            feedback.pushConsoleInfo("Found the following maps: " + '\n'.join(foundMaps))
-            options = OptionsCfg.read()
-            if not options[OptionsCfg.ZOOM_MAX]:
-                options[OptionsCfg.ZOOM_MAX] = 7
-            pointLayers = WMSCapabilities.getAllCustomLayers(capabilitiesTxt.text)
-            mapsUrl = "https://maps.csr.ufmg.br/calculator/?queryid=152&storeurl=" + storeUrl + "/"
-            if len(foundMaps) > 0:
-                mapsUrl += "&remotemap=" + ",".join([layer + ";" + layerAttr for layer in foundMaps])
-            if len(pointLayers) > 0:
-                mapsUrl += "&points=" + ",".join(pointLayers)
-            feedback.pushConsoleInfo("The following maps were found into the repository \"" + storeUrl + "\":" + '\n'.join(foundMaps) + "\n---------")
+            mapsUrl = "https://maps.csr.ufmg.br/calculator/?queryid=152&listRepository=Repository&storeurl=" + storeUrl + "/"
             feedback.pushConsoleInfo(mapsUrl)
             webbrowser.open_new(mapsUrl)
-        elif capabilitiesTxt.status_code == HTTPStatus.NOT_FOUND:
-            feedback.pushConsoleInfo("Sorry, no map is shared from this repository.")
-        else:
-            feedback.pushConsoleInfo("Error: Please confirm the user or repository. ERROR response_code: " + str(capabilitiesTxt.status_code) + " response: " + str(capabilitiesTxt.text))
-        return {"MAPS": foundMaps, "PointVector": pointLayers, "SHAREABLE_URL": mapsUrl}
+        return {"SHAREABLE_URL": mapsUrl}
 
     def name(self):
         """

@@ -67,11 +67,6 @@ class MappiaPublisherPlugin(object):
         iface.addPluginToWebMenu(u"&Mappia", self.viewAction)
         iface.addToolBarIcon(self.viewAction)
 
-        self.reportAction = QAction(QIcon(os.path.join(os.path.dirname(__file__), "icon_report.png")), u"Feedback report", iface.mainWindow())
-        self.reportAction.triggered.connect(self.getReport)
-        iface.addPluginToWebMenu(u"&Mappia", self.reportAction)
-        iface.addToolBarIcon(self.reportAction)
-
     def initGui(self):
         self.initProcessing()
 
@@ -81,11 +76,6 @@ class MappiaPublisherPlugin(object):
         iface.removeToolBarIcon(self.shareAction)
         iface.removePluginWebMenu(u"&Mappia", self.viewAction)
         iface.removeToolBarIcon(self.viewAction)
-        iface.removePluginWebMenu(u"&Mappia", self.reportAction)
-        iface.removeToolBarIcon(self.reportAction)
-
-    def getReport(self):
-        processing.execAlgorithmDialog("mappia:Report")
 
     def publishCallback(self):
         processing.execAlgorithmDialog("mappia:Share", {'LAYERS': [layer.dataProvider().dataSourceUri(False) for layer in iface.mapCanvas().layers()]})
