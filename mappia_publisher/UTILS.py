@@ -54,14 +54,14 @@ class UTILS:
     def getQGISversion():
         try:
             from qgis.core import Qgis
-            return Qgis.QGIS_VERSION[0]
+            return Qgis.QGIS_VERSION
         except:
             return None
 
     @staticmethod
     def isQgisSupported():
         try:
-            return int(UTILS.getQGISversion()) >= 3
+            return int(UTILS.getQGISversion()[0]) >= 3
         except:
             return True
 

@@ -7,7 +7,7 @@ name=Mappia Publisher
 qgisMinimumVersion=3.4.1
 description=Share your maps online (raster and shape) as a profissional. Easily make your QGIS maps online 24/7 (for free, no private server required). (Beta Access, please report any error)
 #Dont forget to update the version in mappia_publisher_algorithm.py.
-version=2.9.5
+version=2.9.7
 author=Danilo da Silveira Figueira
 email=danilo@csr.ufmg.br
 
@@ -33,7 +33,9 @@ repository=https://github.com/MappiaEarth/mappia_publisher
 
 hasProcessingProvider=yes
 # Uncomment the following line and add your changelog:
-changelog=Publish maps normally when point geometry is not defined.
+changelog=Add a link to list repository maps.
+    Improving QGIS compatibility detects when some options are not available but manages to continue the publication process.
+    Publish maps normally when point geometry is not defined.
     Warning message if possible incompatibility with QGIS version.
     Tested in Linux that was not finding the git executable.
     Fixed some issues with older versions.

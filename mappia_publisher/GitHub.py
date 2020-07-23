@@ -180,7 +180,7 @@ class GitHub:
 
     @staticmethod
     def isOptionsOk(folder, user, repository, feedback, ghPassword=None, mustAskUser=False):
-        try :
+        try:
             #Cria ou pega o repositório atual.
             repo = GitHub.getRepository(folder, user, repository, ghPassword, feedback)
             if not repo:
@@ -253,7 +253,7 @@ class GitHub:
     def createRepo(ghRepository, ghUser, ghPass, feedback):
         payload = {
             'name': ghRepository,
-            'description': 'Repository cointaining maps of the mappia publisher.',
+            'description': 'Repository maps published in mappia.\n\n# All maps in this repository:\n\nhttps://maps.csr.ufmg.br/calculator/?map=&queryid=152&listRepository=Repository&storeurl='+GitHub.getGitUrl(ghUser, ghRepository),
             'branch': 'master',
             'auto_init': 'true'
         }
@@ -304,10 +304,11 @@ class GitHub:
             GitHub.getCredentials(state)
             webbrowser.open(url, 1)
             isFirstOpen = True
-            def checkLoginValidation(btn, qntCallbacks):
+            def checkLoginValidation(btn, timeSpent):
                 credentials['value'] = credentials['value'] or GitHub.getCredentials(state)
                 if credentials['value'] and not mustAskUser:
                     btn.done(0)
+                return True
             while not credentials['value']:
                 sleep(1)
                 auxMsg = '' if isFirstOpen else '\n\nWaiting validation, re-openning the authorization github page.\nPlease login on a Github account to continue.'

@@ -374,7 +374,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
     OUTPUT_DIR_TMP = None
 
-    version = '2.9.5'
+    version = '2.9.7'
 
     found_git = ''
 
@@ -468,7 +468,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
         ghPassParameter = QgsProcessingParameterString(
             self.GITHUB_PASS,
-            self.tr('Github Access Token'),
+            self.tr('Github Access Token *'),
             optional=True,
             defaultValue=options['gh_pass']
         )
@@ -581,7 +581,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                     feedback.setProgressText("Error publishing map")
             else:
                 feedback.setProgressText("Generating tiles to publish online")
-                layerRenderSettings = self.createLayerRenderSettings(layer, dest_crs, outputFormat)
+                layerRenderSettings = self.createLayerRenderSettings(layer, dest_crs, outputFormat, feedback)
                 metatiles_by_zoom = self.createLayerMetatiles(wgs_crs, layer, min_zoom, max_zoom)
                 for zoom in range(min_zoom, max_zoom + 1):
                     UTILS.checkForCanceled(feedback)
@@ -662,11 +662,20 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         return image
 
     #Configure the rendering settings for the WMS tiles.
-    def createLayerRenderSettings(self, layer, dest_crs, outputFormat):
+    def createLayerRenderSettings(self, layer, dest_crs, outputFormat, feedback):
         settings = QgsMapSettings()
         # settings.setFlag(QgsMapSettings.Flag.Antialiasing, on=False)
-        settings.setFlag(QgsMapSettings.Flag.UseRenderingOptimization, on=False)
-        settings.setFlag(QgsMapSettings.Flag.UseAdvancedEffects, on=False)
+        try:
+            settings.setFlag(QgsMapSettings.Flag.UseRenderingOptimization, on=False)
+        except:
+            feedback.pushConsoleInfo("Warning: Rendering optimizations not available in your QGIS version.")
+            pass
+        try:
+            settings.setFlag(QgsMapSettings.Flag.UseAdvancedEffects, on=False)
+        except:
+            feedback.pushConsoleInfo("Warning: Opacity and blending effects not available in your QGIS version.")
+            pass
+
         settings.setOutputImageFormat(outputFormat)
         settings.setDestinationCrs(dest_crs)
         settings.setLayers([layer])
@@ -677,9 +686,16 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         canvas_blue = QgsProject.instance().readNumEntry('Gui', '/CanvasColorBluePart', 255)[0]
         color = QColor(canvas_red, canvas_green, canvas_blue, 0)
         settings.setBackgroundColor(color)
-        labeling_engine_settings = settings.labelingEngineSettings()
-        labeling_engine_settings.setFlag(QgsLabelingEngineSettings.UsePartialCandidates, False)
-        settings.setLabelingEngineSettings(labeling_engine_settings)
+        try:
+            labeling_engine_settings = settings.labelingEngineSettings()
+            try:
+                labeling_engine_settings.setFlag(QgsLabelingEngineSettings.UsePartialCandidates, False)
+            except:
+                feedback.pushConsoleInfo("Warning: Cannot draw label candidates that are partially outside of the map view. Your QGIS version has not 'UsePartialCandidates'.")
+                pass
+            settings.setLabelingEngineSettings(labeling_engine_settings)
+        except:
+            feedback.pushConsoleInfo("Warning: This QGIS version does not support label Engine.")
         try:
             layer.resampleFilter().setZoomedInResampler(None)
             layer.resampleFilter().setZoomedOutResampler(None)
