@@ -455,6 +455,22 @@ def unparse(input_dict, output=None, encoding='utf-8', full_document=True,
             pass
         return value
 
+class xmltodict:
+    @staticmethod
+    def unparse(*args, **kwargs):
+        return unparse(*args, **kwargs)
+
+    @staticmethod
+    def _emit(*args, **kwargs):
+        return _emit(*args, **kwargs)
+
+    @staticmethod
+    def _process_namespace(*args, **kwargs):
+        return _process_namespace(*args, **kwargs)
+
+    @staticmethod
+    def parse(*args, **kwargs):
+        return parse(*args, **kwargs)
 
 if __name__ == '__main__':  # pragma: no cover
     import sys

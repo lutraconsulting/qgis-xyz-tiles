@@ -1,8 +1,30 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
-from . import xmltodict
-from .UTILS import UTILS
+
+isDinamica = False
+try:
+    dinamica.package("os")
+    isDinamica = True
+except:
+    isDinamica = False
+
+if not isDinamica:
+    try:
+        from . import xmltodict
+        from .UTILS import UTILS
+        from qgis.PyQt.QtWidgets import QMessageBox
+        from qgis.core import (QgsCoordinateReferenceSystem, QgsProject, QgsPointXY, QgsCoordinateTransform, QgsVectorLayer)
+    except:
+        pass #Not in QGIS
+
+    try:
+        from UTILS import UTILS
+        from xmltodict import xmltodict
+    except:
+        pass #Not in Dinamica Code
+
 from collections import OrderedDict
-from qgis.PyQt.QtWidgets import QMessageBox
 import collections
 from pathlib import Path
 import json
@@ -10,8 +32,6 @@ import io
 import os
 import re
 import csv
-
-from qgis.core import (QgsCoordinateReferenceSystem, QgsProject, QgsPointXY, QgsCoordinateTransform, QgsVectorLayer)
 
 class WMSCapabilities:
 
@@ -290,7 +310,8 @@ class WMSCapabilities:
     def getCurrentCapabilitiesDoc(directory):
         capabilitiesPath = os.path.join(directory, "getCapabilities.xml")
         if os.path.isfile(capabilitiesPath):
-            capabilitiesContent = Path(capabilitiesPath).read_text()
+            with io.open(capabilitiesPath, mode="r", encoding="utf-8") as capabilitiesFile:
+                capabilitiesContent = capabilitiesFile.read()
         else:
             capabilitiesContent = WMSCapabilities.getDefaultCapabilities()
         doc = xmltodict.parse(capabilitiesContent)
@@ -299,7 +320,8 @@ class WMSCapabilities:
     @staticmethod
     def saveCurrentCapabilities(directory, doc):
         capabilitiesPath = os.path.join(directory, "getCapabilities.xml")
-        Path(capabilitiesPath).write_text(xmltodict.unparse(doc, pretty=True))
+        with io.open(capabilitiesPath, mode="w", encoding="utf-8") as capabilitiesFile:
+            capabilitiesFile.write(xmltodict.unparse(doc, pretty=True))
 
     @staticmethod
     def getCustomLayerDefaultDefinition(layerName):
@@ -373,24 +395,36 @@ class WMSCapabilities:
                     curLayer['KeywordList']['Keyword'] = WMSCapabilities.getMapKeyword(False, 8)
         WMSCapabilities.saveCurrentCapabilities(directory, doc)
 
+    @staticmethod
+    def updateXMLQGIS(directory, layer, layerTitle, layerAttr, maxZoom, downloadLink):
+        isShapefile = (isinstance(layer, QgsVectorLayer))
+        layerExtents = layer.extent()
+        layerMercatorExtents = UTILS.getMapExtent(layer, QgsCoordinateReferenceSystem('EPSG:4326'))
+        return WMSCapabilities.updateXML(directory, layerExtents, layerMercatorExtents, isShapefile, layerTitle, layerAttr, maxZoom, downloadLink)
 
     @staticmethod
-    def updateXML(directory, layer, layerTitle, layerAttr, maxZoom, downloadLink):
+    def updateXMLDinamica(directory, layerExtents, layerMercatorExtents, isShapefile, layerTitle, layerAttr, maxZoom, downloadLink):
+        assert isinstance(layerExtents, WMSBBox) and isinstance(layerMercatorExtents, WMSBBox)
+        return WMSCapabilities.updateXML(directory, layerExtents, layerMercatorExtents, isShapefile, layerTitle, layerAttr, maxZoom, downloadLink)
+
+    @staticmethod
+    def updateXML(directory, layerExtents, layerMercatorExtents, isShapefile, layerTitle, layerAttr, maxZoom, downloadLink):
         doc = WMSCapabilities.getCurrentCapabilitiesDoc(directory)
 
         filename = UTILS.normalizeName(layerTitle) #layer Name no qgis
 
-        #extents, projection
-        projMaxX = layer.extent().xMaximum()
-        projMinX = layer.extent().xMinimum()
-        projMaxY = layer.extent().yMaximum()
-        projMinY = layer.extent().yMinimum()
-        llExtent = UTILS.getMapExtent(layer, QgsCoordinateReferenceSystem('EPSG:4326'))
-        latMaxX = llExtent.xMaximum()
-        latMinX = llExtent.xMinimum()
-        latMaxY = llExtent.yMaximum()
-        latMinY = llExtent.yMinimum()
-        isShapefile = (isinstance(layer, QgsVectorLayer))
+
+        # #extents, projection
+        projMaxX = layerExtents.xMaximum()
+        projMinX = layerExtents.xMinimum()
+        projMaxY = layerExtents.yMaximum()
+        projMinY = layerExtents.yMinimum()
+        # llExtent = UTILS.getMapExtent(layer, QgsCoordinateReferenceSystem('EPSG:4326'))
+        latMaxX = layerMercatorExtents.xMaximum()
+        latMinX = layerMercatorExtents.xMinimum()
+        latMaxY = layerMercatorExtents.yMaximum()
+        latMinY = layerMercatorExtents.yMinimum()
+        # isShapefile = (isinstance(layer, QgsVectorLayer))
 
 
         if 'Layer' in doc['WMT_MS_Capabilities']['Capability']['Layer']:
@@ -439,7 +473,6 @@ class WMSCapabilities:
             doc['WMT_MS_Capabilities']['Capability']['VendorSpecificCapabilities'] = newTileSetDescription
         WMSCapabilities.saveCurrentCapabilities(directory, doc)
 
-
     @staticmethod
     def write_description(directory, layerTitle, layerAttr, cellTypeName, nullValue, operation):
         layerTitle = UTILS.normalizeName(layerTitle)
@@ -472,3 +505,26 @@ class WMSCapabilities:
         with open(jsonPath, "w", encoding="utf-8") as jsonFile:
             jsonFile.write(json.dumps(elements))
         csvFile.close()
+
+class WMSBBox():
+    xMax = None
+    def xMaximum(self):
+        return self.xMax
+
+    xMin = None
+    def xMinimum(self):
+        return self.xMin
+
+    yMax = None
+    def yMaximum(self):
+        return self.yMax
+
+    yMin = None
+    def yMinimum(self):
+        return self.yMin
+
+    def __init__(self, xMax, xMin, yMax, yMin):
+        self.xMax = xMax
+        self.xMin = xMin
+        self.yMax = yMax
+        self.yMin = yMin

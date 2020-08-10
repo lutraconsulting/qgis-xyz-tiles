@@ -9,9 +9,25 @@ from urllib.parse import urlencode
 import requests
 from xml.sax.saxutils import escape
 from zipfile import ZipFile
-from qgis.PyQt.QtCore import QTimer
-from qgis.PyQt.QtWidgets import QMessageBox
-from qgis.core import (QgsProject, QgsCoordinateTransform, QgsMessageLog, QgsVectorLayer, QgsRasterLayer)
+
+isDinamica = False
+try:
+    dinamica.package("os")
+    isDinamica = True
+except:
+    isDinamica = False
+
+try:
+    from QMessageBox import QMessageBox
+except:
+    pass #Not in Dinamica Code
+
+try:
+    from qgis.PyQt.QtWidgets import QMessageBox
+    from qgis.PyQt.QtCore import QTimer
+    from qgis.core import (QgsProject, QgsCoordinateTransform, QgsMessageLog, QgsVectorLayer, QgsRasterLayer)
+except:
+    pass #Not in QGIS
 
 import random
 import string
@@ -166,7 +182,7 @@ class UTILS:
         mapExtent = layer.extent()
         projection.validate()
         layer.crs().validate()
-        src_to_proj = QgsCoordinateTransform(layer.crs(), projection, QgsProject.instance().transformContext() if getattr(layer, "transformContext", None) is None else layer.transformContext())
+        src_to_proj = QgsCoordinateTransform(layer.crs(), projection, QgsProject.instance())#.transformContext() if getattr(layer, "transformContext", None) is None else layer.transformContext())
         return src_to_proj.transformBoundingBox(mapExtent)
 
     @staticmethod
@@ -191,8 +207,9 @@ class UTILS:
         QgsMessageLog.logMessage(" e ".join([str(lat_deg), str(lon_deg), str(zoom)]), tag="Processing")
         lat_rad = math.radians(lat_deg)
         n = 2.0 ** zoom
-        xtile = int((lon_deg + 180.0) / 360.0 * n)
-        ytile = int((1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n)
+        xtile = int(max((lon_deg + 180.0) / 360.0 * n, 0))
+        ytile = int(min((1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n, n))
+        print(xtile, ytile)
         return (xtile, ytile)
 
     # Math functions taken from https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames #spellok
@@ -252,7 +269,10 @@ class UTILS:
     # https://stackoverflow.com/questions/377017/test-if-executable-exists-in-python/12611523
     @staticmethod
     def which(program):
-        if program and UTILS.is_exe(program):
+        fpath, fname = os.path.split(program)
+        if fpath and UTILS.is_exe(program):
+            return program
+        elif program and UTILS.is_exe(program):
             return program
         elif not which(program) is None:
             return which(program)

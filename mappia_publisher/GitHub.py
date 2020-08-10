@@ -3,18 +3,35 @@ import os
 import random
 import tempfile
 import webbrowser
-import subprocess
 import requests
 import time
 import json
 import glob
 import platform
+import subprocess
 from http import HTTPStatus
 from requests import request
 from datetime import datetime
 from time import sleep
-from .UTILS import UTILS
-from qgis.PyQt.QtWidgets import QMessageBox
+
+isDinamica = False
+try:
+    dinamica.package("os")
+    isDinamica = True
+except:
+    isDinamica = False
+
+try:
+    from UTILS import UTILS
+    from QMessageBox import QMessageBox
+except:
+    pass #Not in Dinamica Code
+
+try:
+    from .UTILS import UTILS
+    from qgis.PyQt.QtWidgets import QMessageBox
+except:
+    pass #Not in QGIS
 
 class GitHub:
 
@@ -51,15 +68,13 @@ class GitHub:
             return QMessageBox.Yes == QMessageBox.question(None, "Required GIT executable was not found",
                                                            "Click 'YES' to start download and continue, otherwise please select the executable manually.",
                                                            defaultButton=QMessageBox.Yes,
-                                                           buttons=(
-                                                                       QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel))
+                                                           buttons=(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel))
 
-        return 'AAAAAAAA CARAI'
         if not ("Windows" in platform.system() or "CYGWIN_NT" in platform.system()):
-            QMessageBox.question(None, "Error: Required GIT executable was not found", "Please install git in your system and fill the parameter GIT executable path.")
-            return 'UAAAAAAAAAAA'
+            QMessageBox.question(None, "Failed to find GIT executable", "Please install git in your system and fill the parameter GIT executable path.")
+            return ''
         elif mustAskUser and not userConfirmed():
-            return 'UEEEEEEEEEEEEEE'
+            return ''
 
         def download_file(url, toDir):
             local_filename = os.path.join(toDir, url.split('/')[-1])
@@ -78,7 +93,7 @@ class GitHub:
         selfExtractor = download_file(gitUrl, tmpDir)
         portableGit = os.path.join(tmpDir, "portablegit")
         if (not os.path.isfile(selfExtractor)):
-            return 'UUCCCCCCCCCC'
+            return ''
         subprocess.check_output([selfExtractor, '-o', portableGit, "-y"])
         return os.path.join(portableGit, 'mingw64', 'bin', 'git.exe')
 
@@ -226,15 +241,15 @@ class GitHub:
     def findGitExe(gitExe, found_git, mustAskUser):
         if gitExe and UTILS.is_exe(gitExe):
             return gitExe
-        elif ('GIT_PYTHON_GIT_EXECUTABLE' in os.environ) and UTILS.is_exe(os.environ['GIT_PYTHON_GIT_EXECUTABLE']):
+        elif ('GIT_PYTHON_GIT_EXECUTABLE' in os.environ) and UTILS.is_exe(os.environ['GIT_PYTHON_GIT_EXECUTABLE']) and os.path.isfile(os.environ['GIT_PYTHON_GIT_EXECUTABLE']):
             return os.environ['GIT_PYTHON_GIT_EXECUTABLE']
         elif UTILS.getGitDefault(gitExe):
             return UTILS.getGitDefault(gitExe)
-        elif found_git and UTILS.is_exe(found_git):
-            return GitHub.install_git(mustAskUser)
+        elif found_git and UTILS.is_exe(found_git) and os.path.isfile(found_git):
+            return found_git
         else:
-            return ''
-
+            return GitHub.install_git(mustAskUser)
+            
     @staticmethod
     def tryPullRepository(repo, user, repository, feedback):
         GitHub.configUser(repo, user)
@@ -315,7 +330,7 @@ class GitHub:
                 auxMsg = '' if isFirstOpen else '\n\nWaiting validation, re-openning the authorization github page.\nPlease login on a Github account to continue.'
                 isFirstOpen = False
                 response = CustomMessageBox.showWithCallback(2000,
-                      "Click 'YES' to continue or 'NO' to cancel.\nOpenning the github authentication link in browser." + auxMsg,
+                      "Steps to confirm your credentials:\n1) Enter credentials\n2) click to 'authorize Mappia' \n3) Wait and Click 'YES' to confirm.\n Or 'NO' to cancel.\nOpenning the github authentication link in browser." + auxMsg,
                       "Please confirm credentials at Github site to continue", checkLoginValidation, buttons=QMessageBox.Yes | QMessageBox.No)
                 credentials['value'] = credentials['value'] or GitHub.getCredentials(state)
                 if response == QMessageBox.Yes and not credentials['value']:
@@ -339,6 +354,7 @@ class GitHub:
 
     @staticmethod
     def publishTilesToGitHub(folder, user, repository, feedback, version, password=None):
+        import git
         feedback.pushConsoleInfo('Github found commiting to your account.')
 
         repo = GitHub.getRepository(folder, user, repository, password, feedback)
@@ -357,7 +373,10 @@ class GitHub:
             feedback.pushConsoleInfo("No changes, nothing to commit.")
             return None
         feedback.pushConsoleInfo("Git: Committing changes.")
-        GitHub.gitCommit(repo, "QGIS - " + now.strftime("%d/%m/%Y %H:%M:%S") + " version: " + version, feedback)
+        try:
+            GitHub.gitCommit(repo, "QGIS - " + now.strftime("%d/%m/%Y %H:%M:%S") + " version: " + version, feedback)
+        except git.exc.GitCommandError as e:
+            print("Warning: reason " + str(e))
         # feedback.pushConsoleInfo("CREATING TAG")
         # tag = now.strftime("%Y%m%d-%H%M%S")
         # new_tag = repo.create_tag(tag, message='Automatic tag "{0}"'.format(tag))
@@ -637,12 +656,16 @@ class CustomMessageBox(QMessageBox):
         w = CustomMessageBox()
         w.autoclose = True
         w.callback = callback
+        try:
+            w.setCallback(callback)
+        except:
+            pass
         w.timeout = timeoutMsCallback
         w.setText(message)
         w.setWindowTitle(title)
         w.setIcon(icon)
         w.setStandardButtons(buttons)
-        w.exec_()
+        return w.exec_()
 
 class GitInteractive() :
 
