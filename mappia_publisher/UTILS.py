@@ -182,7 +182,7 @@ class UTILS:
         mapExtent = layer.extent()
         projection.validate()
         layer.crs().validate()
-        src_to_proj = QgsCoordinateTransform(layer.crs(), projection, QgsProject.instance())#.transformContext() if getattr(layer, "transformContext", None) is None else layer.transformContext())
+        src_to_proj = QgsCoordinateTransform(layer.crs(), projection, QgsProject.instance())
         return src_to_proj.transformBoundingBox(mapExtent)
 
     @staticmethod
@@ -209,7 +209,6 @@ class UTILS:
         n = 2.0 ** zoom
         xtile = int(max((lon_deg + 180.0) / 360.0 * n, 0))
         ytile = int(min((1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n, n))
-        print(xtile, ytile)
         return (xtile, ytile)
 
     # Math functions taken from https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames #spellok

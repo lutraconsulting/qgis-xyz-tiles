@@ -38,7 +38,6 @@ import io
 import json
 from pathlib import Path
 import platform
-import requests
 import webbrowser
 import tempfile
 import subprocess
@@ -108,7 +107,7 @@ def get_metatiles(extent, zoom, size=4):
         for j, y in enumerate(range(top_tile, bottom_tile + 1)):
             meta_key = '{}:{}'.format(int(i / size), int(j / size))
             if meta_key not in metatiles:
-                metatiles[meta_key] = MetaTile()
+                metatiles[meta_key] = MetaTile() # Possible MemoryError (limit the dict size) #TODO add a check.
             metatile = metatiles[meta_key]
             metatile.add_tile(i % size, j % size, Tile(x, y, zoom))
 
@@ -208,7 +207,7 @@ class DirectoryWriter:
             clonedLayer.updateFeature(feature)
         clonedLayer.commitChanges()
 
-        layerCsvFolder = self.getPathForMap(layer.name(), mapAttr, 'csv')
+        layerCsvFolder = self.getPathForMap(layer.name(), mapAttr, 'csv') #TODO check if all map path names are ok.
         feedback.setProgressText("Saving results")
         os.makedirs(layerCsvFolder, exist_ok=True)
         savedCsv = QgsVectorFileWriter.writeAsVectorFormat(clonedLayer, os.path.join(layerCsvFolder, 'point_layer.csv'),
@@ -379,6 +378,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     found_git = ''
 
     def initAlgorithm(self, config):
+        print('initAlgorithm()')
 
         #super(MappiaPublisherAlgorithm, self).initAlgorithm()
         """
@@ -465,14 +465,14 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         ghUserParameter.setFlags(ghUserParameter.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
         self.addParameter(ghUserParameter)
 
-        ghPassParameter = QgsProcessingParameterString(
-            self.GITHUB_PASS,
-            self.tr('Github Access Token *'),
-            optional=True,
-            defaultValue=options['gh_pass']
-        )
-        ghPassParameter.setFlags(ghPassParameter.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
-        self.addParameter(ghPassParameter)
+        # ghPassParameter = QgsProcessingParameterString(
+        #     self.GITHUB_PASS,
+        #     self.tr('Github Access Token *'),
+        #     optional=True,
+        #     defaultValue=options['gh_pass']
+        # )
+        # ghPassParameter.setFlags(ghPassParameter.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        # self.addParameter(ghPassParameter)
 
         askUserConfirmation = QgsProcessingParameterBoolean(
             self.ASK_USER,
@@ -486,13 +486,14 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             self.OUTPUT_DIRECTORY,
             self.tr('Output directory'),
             optional=True,
-            defaultValue=options["folder"]
+            defaultValue=options["folder"] or None
         )
-        outputDirParameter.setFlags(outputDirParameter.flags() | QgsProcessingParameterDefinition.FlagAdvanced | QgsProcessingParameterDefinition.FlagIsModelOutput)
+        outputDirParameter.setFlags(outputDirParameter.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
         self.addParameter(outputDirParameter)
 
     #Create the metatiles to the given layer in given zoom levels
-    def createLayerMetatiles(self, projection, layer, minZoom, maxZoom):
+    @staticmethod
+    def createLayerMetatiles(projection, layer, minZoom, maxZoom):
         mapExtentReprojected = UTILS.getMapExtent(layer, projection)
         metatiles_by_zoom = {}
         metatilesize = 4
@@ -510,9 +511,12 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         return total
 
     def preprocessParameters(self, parameters):
-        parameters[self.GITHUB_USER], parameters[self.GITHUB_PASS] = GitHub.getGitCredentials(parameters[self.GITHUB_USER], parameters[self.GITHUB_PASS], parameters[self.ASK_USER])
-        if (parameters[self.GITHUB_USER] and parameters[self.GITHUB_PASS]):
-            parameters[self.GIT_EXECUTABLE] = GitHub.findGitExe(parameters[self.GIT_EXECUTABLE], self.found_git, parameters[self.ASK_USER])
+        print('preprocessParameters')
+        MappiaPublisherAlgorithm.ghPassword = ''
+        result = GitHub.getGitCredentials(parameters[self.GITHUB_USER], self.ghPassword, parameters[self.ASK_USER])
+        parameters[self.GITHUB_USER], MappiaPublisherAlgorithm.ghPassword = result
+        print('prepResult' + json.dumps(result))
+        print('instant self.ghPassword : ' + MappiaPublisherAlgorithm.ghPassword )
         return parameters
 
     def isPointLayer(self, layer, feedback):
@@ -542,18 +546,19 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
 
     def generate(self, writer, parameters, context, feedback):
+        print('generate()')
         # try:
         feedback.setProgress(1)
         feedback.setProgressText("This step can take a long time, and despite the job is going, sometime the interface can freezes.\nThe job is still going, please wait and do not close the application until it finishes.")
         min_zoom = 0
         max_zoom = self.parameterAsInt(parameters, self.ZOOM_MAX, context)
-        outputFormat = QImage.Format_ARGB32
+        outputFormat = QImage.Format_ARGB32 #Format_ARGB32_Premultiplied
         layerAttr = "1" #TODO self.parameterAsString(parameters, self.LAYER_ATTRIBUTE, context)
         cellType = 'int32'
         nullValue = -128
         includeDl = self.parameterAsBool(parameters, self.INCLUDE_DOWNLOAD, context)
         ghUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
-        ghPassword = self.parameterAsString(parameters, self.GITHUB_PASS, context)
+        ghPassword = self.ghPassword
         ghRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
         mapOperation = OperationType.RGBA #OperationType(self.parameterAsEnum(parameters, self.OPERATION, context))
         wgs_crs = QgsCoordinateReferenceSystem('EPSG:4326')
@@ -589,8 +594,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                         if feedback.isCanceled():
                             break
                         transformContext = context.transformContext()
-                        mapRendered = self.renderMetatile(metatile, dest_crs, outputFormat, layerRenderSettings,
-                                                          transformContext, wgs_crs)
+                        mapRendered = self.renderMetatile(metatile, dest_crs, layerRenderSettings,
+                                                          transformContext, wgs_crs, self.WIDTH, self.HEIGHT)
                         for r, c, tile in metatile.tiles:
                             tile_img = mapRendered.copy(self.WIDTH * r, self.HEIGHT * c, self.WIDTH, self.HEIGHT)
                             writer.write_tile(tile, tile_img, mapOperation.getName(), layerTitle, layerAttr)
@@ -644,33 +649,41 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         #     return {"CANCELED": ex}
 
     #Return the rendered map (QImage) for the metatile zoom level.
-    def renderMetatile(self, metatile, dest_crs, outputFormat, renderSettings, transformContext, sourceCrs):
+    @staticmethod
+    def renderMetatile(metatile, dest_crs, renderSettings, transformContext, sourceCrs, width, height):
         wgs_to_dest = QgsCoordinateTransform(sourceCrs, dest_crs, transformContext)
         renderSettings.setExtent(wgs_to_dest.transformBoundingBox(QgsRectangle(*metatile.extent())))
-        size = QSize(self.WIDTH * metatile.rows(), self.HEIGHT * metatile.columns())
+        size = QSize(width * metatile.rows(), height * metatile.columns())
         renderSettings.setOutputSize(size)
-        image = QImage(size, outputFormat)
+        image = QImage(size, renderSettings.outputImageFormat())
         image.fill(Qt.transparent)
         dpm = renderSettings.outputDpi() / 25.4 * 1000
         image.setDotsPerMeterX(dpm)
         image.setDotsPerMeterY(dpm)
         painter = QPainter(image)
+        #painter.setRenderHints(QPainter.RenderHint.NonCosmeticDefaultPen, on=True)
+        #painter.setCompositionMode(QPainter.CompositionMode_Source)
         job = QgsMapRendererCustomPainterJob(renderSettings, painter)
         job.renderSynchronously()
         painter.end()
         return image
 
     #Configure the rendering settings for the WMS tiles.
-    def createLayerRenderSettings(self, layer, dest_crs, outputFormat, feedback):
+    @staticmethod
+    def createLayerRenderSettings(layer, dest_crs, outputFormat, feedback):
         settings = QgsMapSettings()
-        # settings.setFlag(QgsMapSettings.Flag.Antialiasing, on=False)
         try:
-            settings.setFlag(QgsMapSettings.Flag.UseRenderingOptimization, on=False)
+            settings.setFlag(QgsMapSettings.Flag.Antialiasing, False)
+        except:
+            pass
+
+        try:
+            settings.setFlag(QgsMapSettings.Flag.UseRenderingOptimization, True)
         except:
             feedback.pushConsoleInfo("Warning: Rendering optimizations not available in your QGIS version.")
             pass
         try:
-            settings.setFlag(QgsMapSettings.Flag.UseAdvancedEffects, on=False)
+            settings.setFlag(QgsMapSettings.Flag.UseAdvancedEffects, False)
         except:
             feedback.pushConsoleInfo("Warning: Opacity and blending effects not available in your QGIS version.")
             pass
@@ -678,12 +691,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         settings.setOutputImageFormat(outputFormat)
         settings.setDestinationCrs(dest_crs)
         settings.setLayers([layer])
-        dpi = 256
-        settings.setOutputDpi(dpi)
-        canvas_red = QgsProject.instance().readNumEntry('Gui', '/CanvasColorRedPart', 255)[0]
-        canvas_green = QgsProject.instance().readNumEntry('Gui', '/CanvasColorGreenPart', 255)[0]
-        canvas_blue = QgsProject.instance().readNumEntry('Gui', '/CanvasColorBluePart', 255)[0]
-        color = QColor(canvas_red, canvas_green, canvas_blue, 0)
+        settings.setOutputDpi(256)
+        color = QColor(0, 0, 0, 0)
         settings.setBackgroundColor(color)
         try:
             labeling_engine_settings = settings.labelingEngineSettings()
@@ -705,6 +714,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
 
     def checkParameterValues(self, parameters, context):
+        print('checkParameterValues()')
         min_zoom = 0
         max_zoom = self.parameterAsInt(parameters, self.ZOOM_MAX, context)
         if max_zoom < min_zoom:
@@ -715,33 +725,44 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         if ' ' in gitRepository:
             return False, self.tr("Error: Space is not allowed in Repository name (remote folder).")
 
-        if GitHub.testLogin(self.parameterAsString(parameters, self.GITHUB_USER, context),
-                            self.parameterAsString(parameters, self.GITHUB_PASS, context)) == False:
+        if GitHub.testLogin(self.parameterAsString(parameters, self.GITHUB_USER, context), self.ghPassword) == False:
             return False, self.tr('Error: Invalid user or password. Please visit the link https://github.com/login and check your password.')
         return super().checkParameterValues(parameters, context)
 
 
     def prepareAlgorithm(self, parameters, context, feedback):
+        print("prepareAlgorithm() Started: Verify the input options.")
         feedback.pushConsoleInfo("Started: Verify the input options.")
         curUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
         mustAskUser = self.parameterAsBool(parameters, self.ASK_USER, context)
         gitRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
-        ghPassword = self.parameterAsString(parameters, self.GITHUB_PASS, context)
+        ghPassword = self.ghPassword
+        print("selfPass " + self.ghPassword)
+        gitExe = GitHub.findGitExe(parameters[self.GIT_EXECUTABLE], self.found_git, feedback, mustAskUser)
         self.OUTPUT_DIR_TMP = self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context)
         if len(self.OUTPUT_DIR_TMP) <= 0:
             self.OUTPUT_DIR_TMP = tempfile.mkdtemp()
         feedback.pushConsoleInfo("Automatic Step: Checking remote repository.")
         if not UTILS.isQgisSupported():
             feedback.pushConsoleInfo("Warning: This plugin was developped for QGIS 3.x+ please consider update.\n" + (("The identified QGIS Verison is " + UTILS.getQGISversion()) if UTILS.getQGISversion() is not None else "Version could not be idenfied."))
+        feedback.pushConsoleInfo("Automatic Step: Checking git executable.")
+        if gitExe:
+            GitHub.prepareEnvironment(gitExe)
+        feedback.pushConsoleInfo(gitExe)
+        if not gitExe or not os.path.isfile(gitExe):
+            feedback.pushConsoleInfo("Select your git executable program.\n" + str(
+                gitExe) + "\nIt can be downloadable at: https://git-scm.com/downloads")
+            return False
+        feedback.pushConsoleInfo("Automatic Step: Configuring git parameters.")
         if (not GitHub.existsRepository(curUser, gitRepository)) and mustAskUser and (QMessageBox.Yes != QMessageBox.question(
                 None,
                 "Repository not found",
                 "The repository was not found, want to create a new repository?",
                 defaultButton=QMessageBox.Yes,
-                buttons=(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel))):
+                buttocsns=(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel))):
             feedback.pushConsoleInfo("Error: A valid repository is needed please enter a valid repository name or create a new one.")
             return False
-        elif not GitHub.existsRepository(curUser, gitRepository) and not GitHub.createRepo(gitRepository, curUser, ghPassword, feedback):
+        elif not GitHub.existsRepository(curUser, gitRepository) and not GitHub.createRepo(gitRepository, curUser, ghPassword, self.OUTPUT_DIR_TMP, feedback):
             if not mustAskUser or QMessageBox.question(
                     None,
                     "The creation have failed. Want to open the link https://github.com/new to create a new repository?",
@@ -749,21 +770,11 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                 webbrowser.open_new("https://github.com/new")
             feedback.pushConsoleInfo("Error: Failed to create the repository " + gitRepository + ".\nPlease create a one at: https://github.com/new")
             return False
-        feedback.pushConsoleInfo("Automatic Step: Checking git executable.")
-        gitExe = self.parameterAsString(parameters, self.GIT_EXECUTABLE, context)
-        feedback.pushConsoleInfo(gitExe)
-        if not gitExe or not os.path.isfile(gitExe):
-            feedback.pushConsoleInfo("Select your git executable program.\n" + str(
-                gitExe) + "\nIt can be downloadable at: https://git-scm.com/downloads")
-            return False
         if not self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context):
             feedback.pushConsoleInfo("Please specify your repository name.\nYou can create one at: https://github.com/new")
             return False
         ghIncludeDownload = self.parameterAsBool(parameters, self.INCLUDE_DOWNLOAD, context)
         #Danilo depois checar o tamanho dos mapas anteriormente e caso passar 2gb perguntar o usuário se poderia continuar.
-        feedback.pushConsoleInfo("Automatic Step: Configuring git parameters.")
-        if self.parameterAsString(parameters, self.GIT_EXECUTABLE, context):
-            GitHub.prepareEnvironment(self.parameterAsString(parameters, self.GIT_EXECUTABLE, context))
         if not GitHub.isOptionsOk(self.OUTPUT_DIR_TMP, curUser, gitRepository, feedback, ghPassword, mustAskUser):
             feedback.setProgressText("Error: Canceling the execution, please select another output folder.")
             return False
@@ -775,7 +786,6 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             self.parameterAsString(parameters, self.GITHUB_USER, context),
             self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context),
             self.OUTPUT_DIR_TMP,
-            self.parameterAsString(parameters, self.GITHUB_PASS, context),
             self.parameterAsBool(parameters, self.INCLUDE_DOWNLOAD, context),
             self.parameterAsBool(parameters, self.ASK_USER, context)
         )

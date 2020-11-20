@@ -62,8 +62,9 @@ class GitHub:
         except:
             os.environ["PATH"] = gitProgramFolder + os.pathsep + os.environ["PATH"]
 
+
     @staticmethod
-    def install_git(mustAskUser):
+    def install_git(mustAskUser, feedback):
         def userConfirmed():
             return QMessageBox.Yes == QMessageBox.question(None, "Required GIT executable was not found",
                                                            "Click 'YES' to start download and continue, otherwise please select the executable manually.",
@@ -75,6 +76,9 @@ class GitHub:
             return ''
         elif mustAskUser and not userConfirmed():
             return ''
+
+
+        feedback.pushConsoleInfo("Please wait: downloading a portable Git client. (Nedded to communicate with Github).")
 
         def download_file(url, toDir):
             local_filename = os.path.join(toDir, url.split('/')[-1])
@@ -94,7 +98,8 @@ class GitHub:
         portableGit = os.path.join(tmpDir, "portablegit")
         if (not os.path.isfile(selfExtractor)):
             return ''
-        subprocess.check_output([selfExtractor, '-o', portableGit, "-y"])
+        feedback.pushConsoleInfo("Executable downloaded, now extracting it to a temporary folder.")
+        UTILS.runLongTask(subprocess.check_output, feedback, 'Pease wait, pulling changes.', 30, [selfExtractor, '-o', portableGit, "-y"])
         return os.path.join(portableGit, 'mingw64', 'bin', 'git.exe')
 
     @staticmethod
@@ -153,9 +158,16 @@ class GitHub:
             return False
 
     @staticmethod
-    def configUser(repo, user):
+    def configUser(repo, user, ghRepository):
         repo.git.config("user.email", user)
         repo.git.config("user.name", user)
+        originName = "mappia"
+        try:
+            repo.git.remote("add", originName, GitHub.getGitUrl(user, ghRepository))
+        except:
+            repo.git.remote("set-url", originName, GitHub.getGitUrl(user, ghRepository))
+        repo.git.config('--global', 'credential.helper', 'store')
+        repo.git.credential('approve')
 
     @staticmethod
     def getRepository(folder, user, repository, password, feedback):
@@ -194,13 +206,13 @@ class GitHub:
         return repo
 
     @staticmethod
-    def isOptionsOk(folder, user, repository, feedback, ghPassword=None, mustAskUser=False):
+    def isOptionsOk(folder, ghUser, ghRepository, feedback, ghPassword=None, mustAskUser=False):
         try:
             #Cria ou pega o repositório atual.
-            repo = GitHub.getRepository(folder, user, repository, ghPassword, feedback)
+            repo = GitHub.getRepository(folder, ghUser, ghRepository, ghPassword, feedback)
             if not repo:
                 return False
-            GitHub.configUser(repo, user)
+            GitHub.configUser(repo, ghUser, ghRepository)
             if repo.git.status("--porcelain"):
                 response = not mustAskUser or QMessageBox.question(None, "Local repository is not clean.",
                                      "The folder have local changes, we need to fix to continue.\nClick 'DISCARD' to discard changes, 'YES' to commit changes, otherwise click 'CANCEL' to cancel and resolve manually.",
@@ -208,17 +220,13 @@ class GitHub:
                                      defaultButton=QMessageBox.Discard)
                 if not mustAskUser or response == QMessageBox.Yes:
                     feedback.pushConsoleInfo("Pulling remote repository changes to your directory.")
-                    GitHub.tryPullRepository(repo, user, repository, feedback)  # Danilo
+                    GitHub.tryPullRepository(repo, ghUser, ghRepository, feedback)  # Danilo
                     feedback.pushConsoleInfo("Adding all files in folder")
-                    GitHub.addFiles(repo, user, repository, feedback)
+                    GitHub.addFiles(repo, ghUser, ghRepository, feedback)
                     feedback.pushConsoleInfo("Adding all files in folder")
                     GitHub.gitCommit(repo, msg="QGIS - Adding all files in folder " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"), feedback=feedback)
                     feedback.pushConsoleInfo("QGIS - Sending changes to Github")
-                    # try:
-                    #     UTILS.runLongTask(repo.git.pull, feedback, 'Pease wait, pulling changes.', 30)
-                    # except:
-                    #     pass
-                    GitHub.pushChanges(repo, user, repository, ghPassword, feedback)
+                    GitHub.pushChanges(repo, ghUser, ghRepository, ghPassword, feedback)
                 elif response == QMessageBox.Discard:
                     repo.git.clean("-df")
                     repo.git.checkout('--', '.')
@@ -227,7 +235,7 @@ class GitHub:
                     return False
             else:
                 try:
-                    GitHub.tryPullRepository(repo, user, repository, feedback)
+                    GitHub.tryPullRepository(repo, ghUser, ghRepository, feedback)
                     feedback.pushConsoleInfo("Git: Checking out changes.")
                     repo.git.checkout('--', '.')
                 except:
@@ -238,7 +246,7 @@ class GitHub:
             return False
 
     @staticmethod
-    def findGitExe(gitExe, found_git, mustAskUser):
+    def findGitExe(gitExe, found_git, feedback, mustAskUser):
         if gitExe and UTILS.is_exe(gitExe):
             return gitExe
         elif ('GIT_PYTHON_GIT_EXECUTABLE' in os.environ) and UTILS.is_exe(os.environ['GIT_PYTHON_GIT_EXECUTABLE']) and os.path.isfile(os.environ['GIT_PYTHON_GIT_EXECUTABLE']):
@@ -248,38 +256,65 @@ class GitHub:
         elif found_git and UTILS.is_exe(found_git) and os.path.isfile(found_git):
             return found_git
         else:
-            return GitHub.install_git(mustAskUser)
+            return GitHub.install_git(mustAskUser, feedback)
             
     @staticmethod
-    def tryPullRepository(repo, user, repository, feedback):
-        GitHub.configUser(repo, user)
+    def tryPullRepository(repo, user, ghRepository, feedback):
+        GitHub.configUser(repo, user, ghRepository)
         try:
             feedback.pushConsoleInfo("Git: Pulling remote repository current state.")
             # UTILS.runLongTask(repo.git.pull, feedback, 'Pease wait, pulling changes.', 30, " -s recursive -X ours " + GitHub.getGitUrl(user, repository) + "master")
-            UTILS.runLongTask(repo.git.pull, feedback, 'Pease wait, pulling changes.', 30, "-s", "recursive", "-X", "ours", GitHub.getGitUrl(user, repository), "master")
+            UTILS.runLongTask(repo.git.pull, feedback, 'Pease wait, pulling changes.', 30, "-s", "recursive", "-X", "ours", GitHub.getGitUrl(user, ghRepository), "master")
             feedback.pushConsoleInfo("Before fetch changes.")
-            UTILS.runLongTask(repo.git.fetch, feedback, 'Please wait, fetching changes.', 30, GitHub.getGitUrl(user, repository), "master")
+            UTILS.runLongTask(repo.git.fetch, feedback, 'Please wait, fetching changes.', 30, GitHub.getGitUrl(user, ghRepository), "master")
             feedback.pushConsoleInfo("Git: Doing checkout.")
             UTILS.runLongTask(repo.git.checkout, feedback, 'Please wait, doing checkout', 30, "--ours")
         except:
             pass
 
     @staticmethod
-    def createRepo(ghRepository, ghUser, ghPass, feedback):
-        payload = {
-            'name': ghRepository,
-            'description': 'Online maps published by Mappia. [List maps in repository](https://maps.csr.ufmg.br/calculator/?map=&queryid=152&listRepository=Repository&storeurl=' + GitHub.getGitUrl(ghUser, ghRepository)+')',
-            'homepage': 'https://maps.csr.ufmg.br/calculator/?map=&queryid=152&listRepository=Repository&storeurl=' + GitHub.getGitUrl(ghUser, ghRepository),
-            'branch': 'master',
-            'auto_init': 'true'
-        }
-        feedback.pushConsoleInfo("Creating the new repository: " + ghRepository)
-        resp = requests.post(GitHub.githubApi + 'user/repos', auth=(ghUser, ghPass), data=json.dumps(payload))
-        if resp.status_code == 201:
-            sleep(1)
-            return True
-        else:
-            return False
+    def createRepo(ghRepository, ghUser, ghPassword, outputDir, feedback):
+            print("password" + ghPassword)
+            if os.path.exists(outputDir) and len(os.listdir(outputDir)) > 0:
+                feedback.pushConsoleInfo("Cant use selected folder, its not empty, please select an empty folder.")
+                return False
+            try:
+                os.makedirs(outputDir)
+            except:
+                pass
+            if not os.path.exists(outputDir):
+                feedback.pushConsoleInfo("Failed to create the directory: " + outputDir + " please create it manually first.")
+                return False
+            payload = {
+                'name': ghRepository,
+                'description': 'Sharing my spatial data on an online platform.',
+                'branch': 'master',
+                'auto_init': 'false'
+            }
+            feedback.pushConsoleInfo("Creating a new repository: " + ghRepository)
+            resp = requests.post(GitHub.githubApi + 'user/repos', auth=(ghUser, ghPassword), data=json.dumps(payload))
+            if resp.status_code == 201:
+                sleep(2)
+                import git
+                repo = GitHub.getRepository(outputDir, ghUser, ghRepository, ghPassword, feedback)
+                GitHub.configUser(repo, ghUser, ghRepository)
+                with open(os.path.join(outputDir, 'README.md'), 'w') as f:
+                    f.write("""
+# {}
+
+  Sharing my maps online.
+
+# Maps in this repository
+
+  [List maps in repository](https://maps.csr.ufmg.br/calculator/?lang=eng&map=&queryid=152&listRepository=Repository&storeurl=https://github.com/{}/{}/)
+                """.format(ghRepository, ghUser, ghRepository))
+                repo.git.add(['README.md'])
+                repo.git.commit(m='Mappia initializing master Head.')
+                # repo.remotes.origin.push()
+                GitHub.pushChanges(repo, ghUser, ghRepository, ghPassword, feedback)
+                return True
+            else:
+                return False
 
     @staticmethod
     def runLongTask(function, feedback, waitMessage="Please Wait", secondsReport=60, *args, **kwArgs):
@@ -336,9 +371,13 @@ class GitHub:
                 if response == QMessageBox.Yes and not credentials['value']:
                     webbrowser.open(url, 2)
                 elif response != QMessageBox.Yes and not credentials['value']:
-                    return (None, None)
-            return (credentials['value']['user'], credentials['value']['token'])
-        return (curUser, curPass)
+                    print("OPA1")
+                    return [None, None]
+            print("OPA2")
+            print(json.dumps(credentials))
+            return [credentials['value']['user'], credentials['value']['token']]
+        print("OPA3")
+        return [curUser, curPass]
 
     @staticmethod
     def addFiles(repo, user, repository, feedback):
@@ -353,22 +392,25 @@ class GitHub:
         return GitInteractive.pushChanges(repo, user, repository, password, feedback)
 
     @staticmethod
-    def publishTilesToGitHub(folder, user, repository, feedback, version, password=None):
+    def publishTilesToGitHub(folder, ghUser, gitRepository, feedback, version, password=None):
         import git
         feedback.pushConsoleInfo('Github found commiting to your account.')
 
-        repo = GitHub.getRepository(folder, user, repository, password, feedback)
+        repo = GitHub.getRepository(folder, ghUser, gitRepository, password, feedback)
 
         now = datetime.now()
         # https://stackoverflow.com/questions/6565357/git-push-requires-username-and-password
-        repo.git.config("credential.helper", " ", "store")
-        GitHub.tryPullRepository(repo, user, repository, feedback) #Danilo
+        #repo.git.config("credential.helper", " ", "store") #FIXME git: 'credential-' is not a git command. See 'git --help
+        GitHub.tryPullRepository(repo, ghUser, gitRepository, feedback) #Danilo
         feedback.pushConsoleInfo('Git: Add all generated tiles to your repository.')
-        GitHub.addFiles(repo, user, repository, feedback)
+        GitHub.addFiles(repo, ghUser, gitRepository, feedback)
         #feedback.pushConsoleInfo("Git: Mergin.")
         #repo.git.merge("-s recursive", "-X ours")
         #feedback.pushConsoleInfo("Git: Pushing changes.")
-        #repo.git.push(GitHub.getGitUrl(user, repository), "master:refs/heads/master")
+        try:
+            repo.git.push(GitHub.getGitUrl(ghUser, gitRepository), "master:refs/heads/master")
+        except:
+            pass
         if repo.index.diff(None) or repo.untracked_files:
             feedback.pushConsoleInfo("No changes, nothing to commit.")
             return None
@@ -382,7 +424,7 @@ class GitHub:
         # new_tag = repo.create_tag(tag, message='Automatic tag "{0}"'.format(tag))
         # repo.remotes[originName].push(new_tag)
         feedback.pushConsoleInfo("Git: Pushing modifications to remote repository.")
-        GitHub.pushChanges(repo, user, repository, password, feedback)
+        GitHub.pushChanges(repo, ghUser, gitRepository, password, feedback)
         return None
 
     @staticmethod
@@ -687,9 +729,4 @@ class GitInteractive() :
 
     @staticmethod
     def addFiles(repo, user, repository, feedback):
-        originName = "mappia"
-        try:
-            repo.git.remote("add", originName, GitHub.getGitUrl(user, repository))
-        except:
-            repo.git.remote("set-url", originName, GitHub.getGitUrl(user, repository))
         return UTILS.runLongTask(repo.git.add, feedback, waitMessage='Please wait, identifying changes on your repository.', secondsReport=30, all=True) # Adiciona todos arquivos
