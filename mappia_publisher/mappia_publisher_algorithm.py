@@ -34,7 +34,7 @@ import math
 import os
 import traceback
 import csv
-import io
+import re
 import json
 from pathlib import Path
 import platform
@@ -801,10 +801,14 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         try:
             return self.generate(writer, parameters, context, feedback)
         except Exception as e:
-            reportContent = {'Status': 'Error, publication failed! Reporting error to Mappia development team.', "QGIS_version": UTILS.getQGISversion(), 'version': self.version, 'error': traceback.format_exc(), 'exception': str(e), 'os': platform.platform()}
+            reportContent = {'Status': 'Error, publication failed! Reporting error to Mappia development team.', "QGIS_version": UTILS.getQGISversion(), 'version': self.version, 'error': self.removeConfidential(traceback.format_exc()), 'exception': self.removeConfidential(str(e)), 'os': platform.platform()}
             UTILS.sendReport(reportContent)
             feedback.pushConsoleInfo('Error, publication failed! Reporting error to Mappia development team.')
-            raise
+            raise Exception(self.removeConfidential(str(e)))
+
+    @staticmethod
+    def removeConfidential(str):
+        return re.sub('http[s]?:\/\/[^\n@]+@github.com', 'https://USER:PASS@github.com', str)
 
     def name(self):
         """
