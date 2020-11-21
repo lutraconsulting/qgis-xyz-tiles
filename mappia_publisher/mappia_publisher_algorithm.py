@@ -235,7 +235,7 @@ class DirectoryWriter:
     def write_capabilities(self, layer, layerTitle, layerAttr, max_zoom, downloadLink):
         WMSCapabilities.updateXMLQGIS(self.folder, layer, layerTitle, layerAttr, max_zoom, downloadLink)
 
-    def setCapabilitiesDefaultMaxZoom(self, ):
+    def setCapabilitiesDefaultMaxZoom(self):
         WMSCapabilities.setCapabilitiesDefaultMaxZoom(self.folder)
 
     '''
@@ -373,7 +373,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
     OUTPUT_DIR_TMP = None
 
-    version = '2.9.9'
+    version = '2.9.10'
 
     found_git = ''
 
