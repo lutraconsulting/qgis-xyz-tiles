@@ -373,7 +373,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
     OUTPUT_DIR_TMP = None
 
-    version = '2.9.10'
+    version = '2.9.11'
 
     found_git = ''
 
@@ -733,9 +733,9 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
     def prepareAlgorithm(self, parameters, context, feedback):
         print("prepareAlgorithm() Started: Verify the input options.")
         feedback.pushConsoleInfo("Started: Verify the input options.")
-        curUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
+        ghUser = self.parameterAsString(parameters, self.GITHUB_USER, context)
         mustAskUser = self.parameterAsBool(parameters, self.ASK_USER, context)
-        gitRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
+        ghRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
         ghPassword = self.ghPassword
         print("selfPass " + self.ghPassword)
         gitExe = GitHub.findGitExe(parameters[self.GIT_EXECUTABLE], self.found_git, feedback, mustAskUser)
@@ -754,7 +754,7 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                 gitExe) + "\nIt can be downloadable at: https://git-scm.com/downloads")
             return False
         feedback.pushConsoleInfo("Automatic Step: Configuring git parameters.")
-        if (not GitHub.existsRepository(curUser, gitRepository)) and mustAskUser and (QMessageBox.Yes != QMessageBox.question(
+        if (not GitHub.existsRepository(ghUser, ghRepository, ghPassword)) and mustAskUser and (QMessageBox.Yes != QMessageBox.question(
                 None,
                 "Repository not found",
                 "The repository was not found, want to create a new repository?",
@@ -762,20 +762,22 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
                 buttocsns=(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel))):
             feedback.pushConsoleInfo("Error: A valid repository is needed please enter a valid repository name or create a new one.")
             return False
-        elif not GitHub.existsRepository(curUser, gitRepository) and not GitHub.createRepo(gitRepository, curUser, ghPassword, self.OUTPUT_DIR_TMP, feedback):
+        elif ((not GitHub.existsRepository(ghUser, ghRepository, ghPassword) and not GitHub.createRepo(ghRepository, ghUser, ghPassword, self.OUTPUT_DIR_TMP, feedback))
+                or (GitHub.existsRepository(ghUser, ghRepository, ghPassword) and not GitHub.isRepositoryInitialized(ghUser, ghRepository)
+                    and not GitHub.initializeRepository(self.OUTPUT_DIR_TMP, ghUser, ghRepository, ghPassword, feedback))):
             if not mustAskUser or QMessageBox.question(
                     None,
                     "The creation have failed. Want to open the link https://github.com/new to create a new repository?",
                     defaultButton=QMessageBox.Yes) == QMessageBox.Yes:
                 webbrowser.open_new("https://github.com/new")
-            feedback.pushConsoleInfo("Error: Failed to create the repository " + gitRepository + ".\nPlease create a one at: https://github.com/new")
+            feedback.pushConsoleInfo("Error: Failed to create the repository " + ghRepository + ".\nPlease create a one at: https://github.com/new")
             return False
         if not self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context):
             feedback.pushConsoleInfo("Please specify your repository name.\nYou can create one at: https://github.com/new")
             return False
         ghIncludeDownload = self.parameterAsBool(parameters, self.INCLUDE_DOWNLOAD, context)
         #Danilo depois checar o tamanho dos mapas anteriormente e caso passar 2gb perguntar o usuário se poderia continuar.
-        if not GitHub.isOptionsOk(self.OUTPUT_DIR_TMP, curUser, gitRepository, feedback, ghPassword, mustAskUser):
+        if not GitHub.isOptionsOk(self.OUTPUT_DIR_TMP, ghUser, ghRepository, feedback, ghPassword, mustAskUser):
             feedback.setProgressText("Error: Canceling the execution, please select another output folder.")
             return False
         feedback.pushConsoleInfo("Automatic Step: Saving option changes.")
