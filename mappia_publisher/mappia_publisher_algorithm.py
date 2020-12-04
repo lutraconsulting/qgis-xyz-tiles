@@ -33,8 +33,10 @@ __revision__ = '$Format:%H$'
 import math
 import os
 import traceback
+import requests
 import csv
 import re
+from datetime import date
 import json
 from pathlib import Path
 import platform
@@ -373,9 +375,32 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
 
     OUTPUT_DIR_TMP = None
 
-    version = '2.9.11'
+    version = '2.9.12'
+
+    last_update_date = None
 
     found_git = ''
+
+    def isPluginUpdated(self):
+        todayStr = date.today().strftime("%Y %m %d")
+        if self.last_update_date is None or self.last_update_date < todayStr:
+            versions = self.version.split('.')
+            nextSmalVersion = versions[0] + '.' + versions[1] + '.' + str(int(versions[2]) + 1)
+            nextMidVersion = versions[0] + '.' + str(int(versions[1]) + 1) + '.0'
+            nextBigVersion = str(int(versions[0]) + 1) + '.0.0'
+            needUpdate = False
+
+            seekMsg = 'Approved'
+
+            for url in [nextSmalVersion, nextMidVersion, nextBigVersion]:
+                if needUpdate == False:
+                    res = requests.get('https://plugins.qgis.org/plugins/mappia_publisher/version/'+url+'/')
+                    needUpdate = res.status_code == 200 and seekMsg in res.text and 'yes' in res.text[res.text.index(seekMsg):]
+            return not needUpdate
+        else:
+            self.last_update_date = todayStr
+            return True
+
 
     def initAlgorithm(self, config):
         print('initAlgorithm()')
@@ -387,6 +412,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         """
 
         options = OptionsCfg.read()
+
+        self.last_update_date = options[OptionsCfg.UPDATE_CHECK]
 
         #self.addParameter(
         #    QgsProcessingParameterEnum(
@@ -566,7 +593,11 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         layers = self.parameterAsLayerList(parameters, self.LAYERS, context)
         metatilesCount = self.getTotalTiles(wgs_crs, min_zoom, max_zoom, layers)
         if includeDl:
-            GitHub.createDownloadTag(ghUser, ghRepository, ghPassword, feedback)
+            try:
+                GitHub.createDownloadTag(ghUser, ghRepository, ghPassword, feedback)
+            except Exception as ex:
+                feedback.pushConsoleInfo('Warning: Ignoring uploading map files to repository. Reason: ' + str(ex))
+                includeDl = False
             #Danilo precisa de commit?
         #FIXME Dar um update e um push
         progress = 0
@@ -737,6 +768,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
         mustAskUser = self.parameterAsBool(parameters, self.ASK_USER, context)
         ghRepository = self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context)
         ghPassword = self.ghPassword
+        if not self.isPluginUpdated():
+            feedback.pushConsoleInfo("Warning: Please update your Mappia plugin, there is a new versison.")
         print("selfPass " + self.ghPassword)
         gitExe = GitHub.findGitExe(parameters[self.GIT_EXECUTABLE], self.found_git, feedback, mustAskUser)
         self.OUTPUT_DIR_TMP = self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context)
@@ -789,7 +822,8 @@ class MappiaPublisherAlgorithm(QgsProcessingAlgorithm):
             self.parameterAsString(parameters, self.GITHUB_REPOSITORY, context),
             self.OUTPUT_DIR_TMP,
             self.parameterAsBool(parameters, self.INCLUDE_DOWNLOAD, context),
-            self.parameterAsBool(parameters, self.ASK_USER, context)
+            self.parameterAsBool(parameters, self.ASK_USER, context),
+            self.last_update_date
         )
         feedback.pushConsoleInfo("Automatic Step: Changes Saved.")
         return True

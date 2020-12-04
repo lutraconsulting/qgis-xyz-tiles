@@ -587,7 +587,7 @@ class GitHub:
 
     # Create the download tag or report a error.
     @staticmethod
-    def createDownloadTag(user, repository, password, feedback):
+    def createDownloadTag(user, repository, password, feedback, waitGhUpdate=4):
         data = {
             'tag_name': GitHub.releaseName,
             'name': GitHub.releaseName,
@@ -597,8 +597,8 @@ class GitHub:
         }
         response = GitHub._request('POST', GitHub.githubApi + 'repos/' + user + "/" + repository + "/releases",
                                    token=password, data=json.dumps(data), headers={'Content-Type': 'application/json'})
-        if (response.status_code == 422) and GitHub.getRelease(user, repository, password,
-                                                               GitHub.releaseName) is not None:  # vou considerar q ja está criado
+        time.sleep(waitGhUpdate)
+        if (response.status_code == 422) and GitHub.getRelease(user, repository, password, GitHub.releaseName) is not None:  # vou considerar q ja está criado
             pass
         else:
             response.raise_for_status()

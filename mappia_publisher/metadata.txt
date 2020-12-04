@@ -7,7 +7,7 @@ name=Mappia Publisher
 qgisMinimumVersion=3.4.1
 description=Share your maps online (raster and shape) as a profissional. Easily make your QGIS maps online 24/7 (for free, no private server required). (Beta Access, please report any error)
 #Dont forget to update the version in mappia_publisher_algorithm.py.
-version=2.9.11
+version=2.9.12
 author=Danilo da Silveira Figueira
 email=danilo@csr.ufmg.br
 
@@ -33,7 +33,9 @@ repository=https://github.com/MappiaEarth/mappia_publisher
 
 hasProcessingProvider=yes
 # Uncomment the following line and add your changelog:
-changelog=Initialize directory if empty.
+changelog=Add a message to notify a plugin update.
+    Ignore errors on publishing file map releases (to download).
+    Initialize directory if empty.
     Map list link in README description.
     Tile bounds are limited to each zoom level.
     Improve GIT executable search.

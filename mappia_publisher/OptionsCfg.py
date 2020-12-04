@@ -1,8 +1,9 @@
 import os
 import json
+from datetime import date
 
 class OptionsCfg:
-
+    UPDATE_CHECK = 'update_check'
     ZOOM_MAX = 'zoom_max'
     GIT_EXE = "git_exe"
     ATTR_NAME = "attrName"
@@ -21,8 +22,9 @@ class OptionsCfg:
         return os.path.join(basepath, name)
 
     @staticmethod
-    def createCfg(zoom_max=None, gitExe=None, attrName=None, ghUser=None, ghRepository=None, folder=None, includeDl=None, askUser=None):
+    def createCfg(zoom_max=None, gitExe=None, attrName=None, ghUser=None, ghRepository=None, folder=None, includeDl=None, askUser=None, update_check=None):
         defaults = dict()
+        defaults[OptionsCfg.UPDATE_CHECK] = update_check if update_check is not None else None
         defaults[OptionsCfg.ZOOM_MAX] = zoom_max if zoom_max is not None else 9
         defaults[OptionsCfg.GIT_EXE] = gitExe if gitExe is not None else ''
         defaults[OptionsCfg.ATTR_NAME] = attrName if attrName is not None else '1'
@@ -35,9 +37,9 @@ class OptionsCfg:
 
 
     @staticmethod
-    def write(zoom_max, gitExe, attrName, ghUser, ghRepository, folder, includeDl, askUser):
+    def write(zoom_max, gitExe, attrName, ghUser, ghRepository, folder, includeDl, askUser, update_check):
         with open(OptionsCfg.resolve("options.json"), 'w', encoding="utf-8") as f:
-            json.dump(OptionsCfg.createCfg(zoom_max, gitExe, attrName, ghUser, ghRepository, folder, includeDl, askUser), f)
+            json.dump(OptionsCfg.createCfg(zoom_max, gitExe, attrName, ghUser, ghRepository, folder, includeDl, askUser, update_check), f)
 
     @staticmethod
     def get(propertyName):
